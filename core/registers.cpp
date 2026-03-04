@@ -73,6 +73,7 @@ void RegisterFile::writeFloat(uint8_t reg, float value) {
 
 void RegisterFile::writePC(int32_t value) {
   pc = value;
+  intRegs[1] = value;  // Keep x1 in sync with PC
 }
 
 void RegisterFile::writeIntCC(IntConditionCode code) {
