@@ -154,6 +154,8 @@ struct Instruction {
     bool     valid;         // False if instruction should be treated as NOP
     bool     isFloat;       // True if this instruction operates on FP registers
 
+    std::string getCommonName() const; // Returns a short name like "ADD" or "BEQ", used by toString()
+
     // Returns a human-readable string, useful for trace logs and the GUI
     std::string toString() const;
 };
