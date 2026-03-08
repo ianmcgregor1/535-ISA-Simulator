@@ -58,9 +58,8 @@ MemoryResponse Memory::loadWord(uint32_t address, AccessID id) {
 
   // If this is the DRAM level, return data
   if (!isCache) {
-    uint32_t addr = currentAddress;  // save before finishOperation resets it to 0
     finishOperation();
-    return MemoryResponse::resWord(readWord(addr));
+    return MemoryResponse::resWord(readWord(address));
   }
 
   // Otherwise, this is the cache level. Check for hit/miss and return or forward to next level as needed.
@@ -89,7 +88,7 @@ MemoryResponse Memory::loadWord(uint32_t address, AccessID id) {
       return MemoryResponse::resWait(); // This shouldn't happen
     }
 
-    MemoryResponse r = loadLineNext(currentAddress);
+    MemoryResponse r = loadWordNext(currentAddress);
     // Forward a WAIT response
     if (r.status == MemoryResponse::Status::WAIT)
       return r;
