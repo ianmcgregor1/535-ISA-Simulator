@@ -71,7 +71,7 @@ struct CacheLine {
   bool     valid;
   uint32_t tag;
   uint32_t data[WORDS_PER_LINE];
-  uint32_t lruCounter;    // Higher = more recently used
+  uint32_t lruCounter;    // Resets to 0 when used, so higher = less recently used
 
   // Construction initializes to invalid line with zeros
   CacheLine() : valid(false), tag(0), lruCounter(0) {

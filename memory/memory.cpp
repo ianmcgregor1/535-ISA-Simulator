@@ -58,7 +58,7 @@ MemoryResponse Memory::loadWord(uint32_t address, AccessID id) {
   // If this is the DRAM level, return data
   if (!isCache) {
     finishOperation();
-    return MemoryResponse::resWord(readWord(currentAddress));
+    return MemoryResponse::resWord(readWord(address));
   }
 
   // Otherwise, this is the cache level. Check for hit/miss and return or forward to next level as needed.
@@ -508,13 +508,13 @@ int Memory::findWay(uint32_t setIndex, uint32_t tag) const {
 // Find the way with the lowest lruCounter (least recently used).
 int Memory::findLRUWay(uint32_t setIndex) const {
   int lruWay = 0;
-  uint32_t lruCounter = UINT32_MAX;
+  uint32_t lruCounter = 0;
 
   for (int way = 0; way < associativity; way++) {
     // Prefer invalid lines over any LRU values
     if (!lines[setIndex][way].valid)
-      return static_cast<int>(way);
-    if (lines[setIndex][way].lruCounter < lruCounter) {
+      return way;
+    if (lines[setIndex][way].lruCounter >= lruCounter) {
       lruCounter = lines[setIndex][way].lruCounter;
       lruWay = way;
     }
@@ -526,12 +526,12 @@ int Memory::findLRUWay(uint32_t setIndex) const {
 // Assigns the used way to the associativity number, and decrements the rest
 void Memory::updateLRU(uint32_t setIndex, uint32_t usedWay) {
   // Assign the used way to associativity number
-  lines[setIndex][usedWay].lruCounter = associativity;
+  lines[setIndex][usedWay].lruCounter = 0;
 
   // Decrement all other ways in the set
   for (int way = 0; way < static_cast<int>(associativity); way++) {
     if (way != static_cast<int>(usedWay))
-      lines[setIndex][way].lruCounter--;
+      lines[setIndex][way].lruCounter++;
   }
 }
 
