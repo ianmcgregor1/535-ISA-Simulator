@@ -40,4 +40,7 @@
 # debug information files
 *.dwo
 
+# IDE and build system files
 .vscode/
+build/
+CMakeLists.txt

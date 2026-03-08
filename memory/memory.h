@@ -69,6 +69,7 @@ struct MemoryResponse {
 */
 struct CacheLine {
   bool     valid;
+  bool     dirty;  // Unused since this is write-through
   uint32_t tag;
   uint32_t data[WORDS_PER_LINE];
   uint32_t lruCounter;    // Resets to 0 when used, so higher = less recently used
