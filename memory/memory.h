@@ -5,7 +5,7 @@
 
 
 // Constants
-constexpr int WORDS_PER_LINE      = 4;
+constexpr int WORDS_PER_LINE = 4;
 
 // Enum for ID of calling programs
 enum class AccessID {
@@ -71,7 +71,7 @@ struct CacheLine {
   bool     valid;
   uint32_t tag;
   uint32_t data[WORDS_PER_LINE];
-  uint32_t lruCounter;    // Higher = more recently used
+  uint32_t lruCounter;    // Resets to 0 when used, so higher = less recently used
 
   // Construction initializes to invalid line with zeros
   CacheLine() : valid(false), tag(0), lruCounter(0) {
@@ -188,12 +188,9 @@ private:
   bool      isCache;          // Set true if this level is a cache at instantiation (nextLevel != null)
   int       accessDelay;      
   Memory*   nextLevel;        
-  mutable uint32_t peekLineBuffer[WORDS_PER_LINE];
 
-  // data[word_offset][line_index]
-  std::vector<uint32_t> data[WORDS_PER_LINE];
+  std::vector<std::vector<uint32_t>> data;
 
-  // lines[set_index][way]
   std::vector<std::vector<CacheLine>> lines;
 
   // Private variables for front door
@@ -213,9 +210,6 @@ private:
 
 
   // Helper functions
-
-  // Decompose a word address into tag, set index, and word offset
-  void decompose(uint32_t  address, uint32_t& tag, uint32_t& setIndex, uint32_t& wordOffset) const;
 
   // Search a set for a matching valid tag, returns index or -1 on miss
   int  findWay(uint32_t setIndex, uint32_t tag) const;

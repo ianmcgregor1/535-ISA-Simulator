@@ -24,8 +24,7 @@ Memory::Memory(uint32_t numLines, uint32_t delay, Memory* nextLevel, uint32_t as
     missCount(0)
 {
   // Instantiate to 0
-  for (int w = 0; w < WORDS_PER_LINE; w++)
-    data[w].assign(numLines, 0);
+  data.assign(numLines, std::vector<uint32_t>(WORDS_PER_LINE, 0));
 
   // Only allocate cache metadata if this is a cache level
   if (isCache)
@@ -132,11 +131,8 @@ MemoryResponse Memory::loadLine(uint32_t address, AccessID id) {
 
   // If this is the DRAM level, return data
   if (!isCache) {
-
-    uint32_t lineIndex = address / WORDS_PER_LINE;
-    uint32_t lineData[WORDS_PER_LINE];
-    for (int w = 0; w < WORDS_PER_LINE; w++)
-      lineData[w] = data[w][lineIndex];
+    uint32_t lineIndex = (currentAddress / WORDS_PER_LINE) % numLines;
+    uint32_t* lineData = data[lineIndex].data();
 
     finishOperation();
     return MemoryResponse::resLine(lineData);
@@ -146,8 +142,6 @@ MemoryResponse Memory::loadLine(uint32_t address, AccessID id) {
   // Otherwise, this is the cache level. Check for hit/miss and return or forward to next level as needed.
   uint32_t tag = currentAddress / (WORDS_PER_LINE * numSets);
   uint32_t setIndex = (currentAddress / WORDS_PER_LINE) % numSets;
-  uint32_t wordOffset = currentAddress % WORDS_PER_LINE;
-
 
   // Find matching way in set, if it exists
   int way = findWay(setIndex, tag);
@@ -300,9 +294,9 @@ MemoryResponse Memory::storeLine(uint32_t address, const uint32_t* inData, Acces
 
   // If this is the DRAM level, write line to flat storage
   if (!isCache) {
-    uint32_t lineIndex = currentAddress / WORDS_PER_LINE;
+    uint32_t lineIndex = (currentAddress / WORDS_PER_LINE) % numLines;
     for (int w = 0; w < WORDS_PER_LINE; w++)
-      data[w][lineIndex] = currentLineData[w];
+      data[lineIndex][w] = currentLineData[w];
     finishOperation();
     return MemoryResponse::resWord(0);
   }
@@ -393,9 +387,7 @@ uint32_t Memory::peekWord(uint32_t address) const {
 }
 
 const uint32_t* Memory::peekLine(uint32_t lineIndex) const {
-  for (int w = 0; w < WORDS_PER_LINE; w++)
-    peekLineBuffer[w] = data[w][lineIndex];
-  return peekLineBuffer;
+  return data[lineIndex].data();
 }
 
 const CacheLine* Memory::peekCacheLine(uint32_t setIndex, uint32_t way) const {
@@ -419,8 +411,8 @@ void Memory::loadProgram(const uint32_t* program, uint32_t numWords, uint32_t st
 }
 
 void Memory::reset() {
-  for (int w = 0; w < WORDS_PER_LINE; w++)
-    std::fill(data[w].begin(), data[w].end(), 0u);
+  for (uint32_t l = 0; l < numLines; l++)
+    std::fill(data[l].begin(), data[l].end(), 0u);
 
   if (cacheEnabled)
     for (auto& set : lines)
@@ -471,7 +463,7 @@ void Memory::saveImage(const std::string& filename) const {
   // Write flat data word by word, in address order
   for (uint32_t line = 0; line < numLines; line++)
     for (int w = 0; w < WORDS_PER_LINE; w++)
-      out.write(reinterpret_cast<const char*>(&data[w][line]), sizeof(uint32_t));
+      out.write(reinterpret_cast<const char*>(&data[line][w]), sizeof(uint32_t));
 }
 
 void Memory::loadImage(const std::string& filename) {
@@ -486,7 +478,7 @@ void Memory::loadImage(const std::string& filename) {
 
   for (uint32_t line = 0; line < numLines; line++)
     for (int w = 0; w < WORDS_PER_LINE; w++)
-      in.read(reinterpret_cast<char*>(&data[w][line]), sizeof(uint32_t));
+      in.read(reinterpret_cast<char*>(&data[line][w]), sizeof(uint32_t));
 }
 
 /*
@@ -503,13 +495,6 @@ float Memory::getMissRate() const {
 * Private helper functions
 */
 
-// Decomposes an address into tag, set index, and word offset components and stores them
-void Memory::decompose(uint32_t  address, uint32_t& tag, uint32_t& setIndex, uint32_t& wordOffset) const {
-  wordOffset = address % WORDS_PER_LINE;
-  setIndex = (address / WORDS_PER_LINE) % numSets;
-  tag = address / (WORDS_PER_LINE * numSets);
-}
-
 // Search a set for a valid line matching tag. Returns way index, or -1 if not found.
 int Memory::findWay(uint32_t setIndex, uint32_t tag) const {
   for (int way = 0; way < associativity; way++) {
@@ -523,13 +508,13 @@ int Memory::findWay(uint32_t setIndex, uint32_t tag) const {
 // Find the way with the lowest lruCounter (least recently used).
 int Memory::findLRUWay(uint32_t setIndex) const {
   int lruWay = 0;
-  uint32_t lruCounter = UINT32_MAX;
+  uint32_t lruCounter = 0;
 
   for (int way = 0; way < associativity; way++) {
     // Prefer invalid lines over any LRU values
     if (!lines[setIndex][way].valid)
-      return static_cast<int>(way);
-    if (lines[setIndex][way].lruCounter < lruCounter) {
+      return way;
+    if (lines[setIndex][way].lruCounter >= lruCounter) {
       lruCounter = lines[setIndex][way].lruCounter;
       lruWay = way;
     }
@@ -541,27 +526,27 @@ int Memory::findLRUWay(uint32_t setIndex) const {
 // Assigns the used way to the associativity number, and decrements the rest
 void Memory::updateLRU(uint32_t setIndex, uint32_t usedWay) {
   // Assign the used way to associativity number
-  lines[setIndex][usedWay].lruCounter = associativity;
+  lines[setIndex][usedWay].lruCounter = 0;
 
   // Decrement all other ways in the set
   for (int way = 0; way < static_cast<int>(associativity); way++) {
     if (way != static_cast<int>(usedWay))
-      lines[setIndex][way].lruCounter--;
+      lines[setIndex][way].lruCounter++;
   }
 }
 
 // Read a word from flat storage by word address.
 uint32_t Memory::readWord(uint32_t address) const {
-  uint32_t lineIndex  = address / WORDS_PER_LINE;
+  uint32_t lineIndex  = (address / WORDS_PER_LINE) % numLines;
   uint32_t wordOffset = address % WORDS_PER_LINE;
-  return data[wordOffset][lineIndex];
+  return data[lineIndex][wordOffset];
 }
 
 // Write a word to flat storage by word address.
 void Memory::writeWord(uint32_t address, uint32_t value) {
-  uint32_t lineIndex  = address / WORDS_PER_LINE;
+  uint32_t lineIndex  = (address / WORDS_PER_LINE) % numLines;
   uint32_t wordOffset = address % WORDS_PER_LINE;
-  data[wordOffset][lineIndex] = value;
+  data[lineIndex][wordOffset] = value;
 }
 
 // Preliminary check - sets business parameters accordingly
