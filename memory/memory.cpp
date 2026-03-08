@@ -36,35 +36,20 @@ Memory::Memory(uint32_t numLines, uint32_t delay, Memory* nextLevel, uint32_t as
 * Front door methods - called by pipeline stages or higher levels of memory
 */
 
-// Read a word or line, returns WAIT if busy
-MemoryResponse Memory::load(uint32_t address, AccessID id, bool isLine) {
+// Load a word, returns WAIT if busy
+MemoryResponse Memory::loadWord(uint32_t address, AccessID id) {
 
   // If level is a cache and disabled, forward address directly to nextLevel without doing anything
   if (isCache && !cacheEnabled && nextLevel != nullptr) {
-    MemoryResponse r = loadFromNext(address);
+    MemoryResponse r = loadWordNext(address);
     return r;
   }
 
-  // If not busy, accept request and set delay
-  if (!busy) {
-    busy                = true;
-    currentID           = id;
-    currentAddress      = address;
-    delayCount          = accessDelay;
-    pendingWriteThrough    = false;
-  }
-
-  // If request ID does not match, return WAIT
-  if (currentID != id) {
+  // Check business parameters, return WAIT if operation cannot proceed
+  if (!checkAndSetBusy(id, MemOp::LOAD, address)) {
     return MemoryResponse::resWait();
   }
-
-
-  // If count is nonzero, decrement and return WAIT
-  if (delayCount > 0) {
-    delayCount--;
-    return MemoryResponse::resWait();
-  }
+  // Otherwise, ID matches and count is 0, so continue
 
 
   /*
@@ -74,20 +59,13 @@ MemoryResponse Memory::load(uint32_t address, AccessID id, bool isLine) {
   // If this is the DRAM level, return data
   if (!isCache) {
     finishOperation();
-    if (isLine) { // Should always be true, but adding word functionality in case
-      uint32_t lineIndex = currentAddress / WORDS_PER_LINE;
-      uint32_t lineData[WORDS_PER_LINE];
-      for (int w = 0; w < WORDS_PER_LINE; w++)
-        lineData[w] = data[w][lineIndex];
-      return MemoryResponse::resLine(lineData);
-    }
     return MemoryResponse::resWord(readWord(currentAddress));
   }
 
   // Otherwise, this is the cache level. Check for hit/miss and return or forward to next level as needed.
-  uint32_t tag = address / (WORDS_PER_LINE * numSets);
-  uint32_t setIndex = (address / WORDS_PER_LINE) % numSets;
-  uint32_t wordOffset = address % WORDS_PER_LINE;
+  uint32_t tag = currentAddress / (WORDS_PER_LINE * numSets);
+  uint32_t setIndex = (currentAddress / WORDS_PER_LINE) % numSets;
+  uint32_t wordOffset = currentAddress % WORDS_PER_LINE;
 
 
   // Find matching way in set, if it exists
@@ -95,13 +73,12 @@ MemoryResponse Memory::load(uint32_t address, AccessID id, bool isLine) {
 
 
   if (way != -1) {
-    // Hit — return data
+    // Hit - return data
     hitCount++;
     updateLRU(setIndex, way);
-    busy = false;
-    if (isLine) {
-      return MemoryResponse::resLine(lines[setIndex][way].data);
-    }
+
+    // Reset business variables and return data
+    finishOperation();
     return MemoryResponse::resWord(lines[setIndex][way].data[wordOffset]);
 
   } else {
@@ -111,7 +88,7 @@ MemoryResponse Memory::load(uint32_t address, AccessID id, bool isLine) {
       return MemoryResponse::resWait(); // This shouldn't happen
     }
 
-    MemoryResponse r = loadFromNext(currentAddress);
+    MemoryResponse r = loadWordNext(currentAddress);
     // Forward a WAIT response
     if (r.status == MemoryResponse::Status::WAIT)
       return r;
@@ -129,11 +106,89 @@ MemoryResponse Memory::load(uint32_t address, AccessID id, bool isLine) {
 
     // Operation complete, clear busy and return data
     finishOperation();
-
-    if (isLine) {
-      return MemoryResponse::resLine(lines[setIndex][evictWay].data);
-    }
     return MemoryResponse::resWord(lines[setIndex][evictWay].data[wordOffset]);
+  }
+}
+
+// Read a word or line, returns WAIT if busy
+MemoryResponse Memory::loadLine(uint32_t address, AccessID id) {
+
+  // If level is a cache and disabled, forward address directly to nextLevel without doing anything
+  if (isCache && !cacheEnabled && nextLevel != nullptr) {
+    MemoryResponse r = loadLineNext(address);
+    return r;
+  }
+
+  // Check business parameters, return WAIT if operation cannot proceed
+  if (!checkAndSetBusy(id, MemOp::LOAD, address)) {
+    return MemoryResponse::resWait();
+  }
+  // Otherwise, ID matches and count is 0, so continue
+
+
+  /*
+  * Count is zero - read the data and react accordingly
+  */
+
+  // If this is the DRAM level, return data
+  if (!isCache) {
+
+    uint32_t lineIndex = address / WORDS_PER_LINE;
+    uint32_t lineData[WORDS_PER_LINE];
+    for (int w = 0; w < WORDS_PER_LINE; w++)
+      lineData[w] = data[w][lineIndex];
+
+    finishOperation();
+    return MemoryResponse::resLine(lineData);
+
+  }
+
+  // Otherwise, this is the cache level. Check for hit/miss and return or forward to next level as needed.
+  uint32_t tag = currentAddress / (WORDS_PER_LINE * numSets);
+  uint32_t setIndex = (currentAddress / WORDS_PER_LINE) % numSets;
+  uint32_t wordOffset = currentAddress % WORDS_PER_LINE;
+
+
+  // Find matching way in set, if it exists
+  int way = findWay(setIndex, tag);
+
+
+  if (way != -1) {
+    // Hit - return data
+    hitCount++;
+    updateLRU(setIndex, way);
+
+    // Reset business variables and return data
+    finishOperation();
+    return MemoryResponse::resLine(lines[setIndex][way].data);
+
+
+  } else {
+    // Miss - call next level
+    if (nextLevel == nullptr) {
+      std::cerr << "Memory::read: miss at bottom level\n";
+      return MemoryResponse::resWait(); // This shouldn't happen
+    }
+
+    MemoryResponse r = loadLineNext(currentAddress);
+    // Forward a WAIT response
+    if (r.status == MemoryResponse::Status::WAIT)
+      return r;
+
+    // Update miss count here so it isn't incremented on every cycle of waiting for the next level
+    missCount++;
+
+    // Got data from lower level, update cache and return
+    int evictWay = findLRUWay(setIndex);
+    lines[setIndex][evictWay].valid = true;
+    lines[setIndex][evictWay].tag = tag;
+    for (int w = 0; w < WORDS_PER_LINE; w++)
+      lines[setIndex][evictWay].data[w] = r.line[w];
+    updateLRU(setIndex, evictWay);
+
+    // Operation complete, clear busy and return data
+    finishOperation();
+    return MemoryResponse::resLine(lines[setIndex][evictWay].data);
   }
 }
 
@@ -145,19 +200,11 @@ MemoryResponse Memory::storeWord(uint32_t address, uint32_t inData, AccessID id)
     return storeWordNext(address, inData);
   }
 
-  // If not busy, accept request and set delay
+  // If not busy, set data
+  // This check should always precede checkAndSetBusy in the storage methods
+  // I have this separated out to avoid ugly overloads
   if (!busy) {
-    busy                    = true;
-    currentID               = id;
-    currentAddress          = address;
-    currentData             = inData;
-    delayCount              = accessDelay;
-    pendingWriteThrough     = false;
-  }
-
-  // If request ID does not match, return WAIT
-  if (currentID != id) {
-    return MemoryResponse::resWait();
+    currentData = inData;
   }
 
   // Write-through in progress - keep forwarding to nextLevel until OK
@@ -169,9 +216,8 @@ MemoryResponse Memory::storeWord(uint32_t address, uint32_t inData, AccessID id)
     return r;
   }
 
-  // If count is nonzero, decrement and return WAIT
-  if (delayCount > 0) {
-    delayCount--;
+  // Check business parameters as normal, return WAIT if not ready
+  if (!checkAndSetBusy(id, MemOp::STORE, address)) {
     return MemoryResponse::resWait();
   }
 
@@ -227,20 +273,12 @@ MemoryResponse Memory::storeLine(uint32_t address, const uint32_t* inData, Acces
     return storeLineNext(address, inData);
   }
 
-  // If not busy, accept request and set delay
+  // If not busy, store data
+  // This check should always precede checkAndSetBusy in the storage methods
+  // I have this separated out to avoid ugly overloads
   if (!busy) {
-    busy                    = true;
-    currentID               = id;
-    currentAddress          = address;
-    delayCount              = accessDelay;
-    pendingWriteThrough     = false;
     for (int w = 0; w < WORDS_PER_LINE; w++)
       currentLineData[w] = inData[w];
-  }
-
-  // If request ID does not match, return WAIT
-  if (currentID != id) {
-    return MemoryResponse::resWait();
   }
 
   // Write-through in progress - keep forwarding to nextLevel until OK
@@ -252,12 +290,10 @@ MemoryResponse Memory::storeLine(uint32_t address, const uint32_t* inData, Acces
     return r;
   }
 
-  // If count is nonzero, decrement and return WAIT
-  if (delayCount > 0) {
-    delayCount--;
+  // Check business parameters as normal, return WAIT if not ready
+  if (!checkAndSetBusy(id, MemOp::STORE, address)) {
     return MemoryResponse::resWait();
   }
-
   /*
   * Count is zero - write the data and react accordingly
   */
@@ -307,18 +343,30 @@ MemoryResponse Memory::storeLine(uint32_t address, const uint32_t* inData, Acces
 /*
 * Back door operations to forward load/store requests to the next level of memory
 */
-MemoryResponse Memory::loadFromNext(uint32_t address) {
+MemoryResponse Memory::loadWordNext(uint32_t address) {
   // If no lower level, return
   if (nextLevel == nullptr) {
+    std::cerr << "Memory::loadWordNext: no lower level\n";
     return MemoryResponse::resWait();
   }
 
-  return nextLevel->load(address, AccessID::L1, true);
+  return nextLevel->loadWord(address, AccessID::L1);
+}
+
+MemoryResponse Memory::loadLineNext(uint32_t address) {
+  // If no lower level, return
+  if (nextLevel == nullptr) {
+    std::cerr << "Memory::loadLineNext: no lower level\n";
+    return MemoryResponse::resWait();
+  }
+
+  return nextLevel->loadLine(address, AccessID::L1);
 }
 
 MemoryResponse Memory::storeWordNext(uint32_t address, uint32_t value) {
   // If no lower level, return
   if (nextLevel == nullptr) {
+    std::cerr << "Memory::storeWordNext: no lower level\n";
     return MemoryResponse::resWait();
   }
 
@@ -328,6 +376,7 @@ MemoryResponse Memory::storeWordNext(uint32_t address, uint32_t value) {
 MemoryResponse Memory::storeLineNext(uint32_t address, const uint32_t* data) {
   // If no lower level, return
   if (nextLevel == nullptr) {
+    std::cerr << "Memory::storeLineNext: no lower level\n";
     return MemoryResponse::resWait();
   }
 
@@ -514,6 +563,38 @@ void Memory::writeWord(uint32_t address, uint32_t value) {
   uint32_t wordOffset = address % WORDS_PER_LINE;
   data[wordOffset][lineIndex] = value;
 }
+
+// Preliminary check - sets business parameters accordingly
+// Returns True if operation can proceed, False if caller should wait
+bool Memory::checkAndSetBusy(AccessID id, MemOp op, uint32_t address) {
+
+  // If not busy, set delay and parameters
+  if (!busy) {
+    busy                = true;
+    currentID           = id;
+    currentOp           = op;
+    currentAddress      = address;
+    delayCount          = accessDelay;
+    pendingWriteThrough = false;
+  }
+
+  // If request ID does not match, return False
+  if (currentID != id) {
+    return false;
+  }
+
+
+  // If count is nonzero, decrement and return False
+  if (delayCount > 0) {
+    delayCount--;
+    return false;
+  }
+
+  // If ID matches and count is zero, return True to indicate operation can proceed
+  return true;
+
+}
+
 
 // Clear metadata associated with in-progress operations
 void Memory::finishOperation() {
