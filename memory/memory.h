@@ -1,91 +1,235 @@
-#ifndef MEMORY_H
-#define MEMORY_H
-
-#include "defines.h"
-#include <array>
-#include <optional>
-#include <iomanip>
-#include <iostream>
+#pragma once
+#include <cstdint>
 #include <string>
-#include <stdexcept>
+#include <vector>
 
-#define LINE_SIZE 8
-#define REG_NUM 32 // num of registers, not really bits
-#define MAXMEMORY 2048 // 2KB, 2^11
 
-constexpr word LINE_SIZE_BYTE = LINE_SIZE*4;
-constexpr word MEMORY_LINE_SIZE = MAXMEMORY/LINE_SIZE_BYTE;
+// Constants
+constexpr int WORDS_PER_LINE      = 4;
 
-#define SETS 8
-#define WAYS 2
+// Enum for ID of calling programs
+enum class AccessID {
+  NONE,       // No current request
+  FETCH,      // Fetch pipeline stage
+  EXECUTE,    // Execute / memory pipeline stage
+  L1,         // L1 cache requesting from DRAM
+  UI          // Side-door GUI access - no restrictions
+};
 
-enum class MEMmode { DRAM, CACHE };
+// Operation type
+enum class MemOp { LOAD, STORE };
 
-typedef struct memory_line {
-    word data[LINE_SIZE] = {0, 0, 0, 0, 0, 0, 0, 0}; // force 0 at init
 
-    // Cache metadata - only accessible when in CACHE mode
-    bool valid = false;
-    bool dirty = false;
-    word tag = 0;
-    uint8_t last_owner = 0xFF;
-    uint32_t last_cycle = 0;
+/*
+* Return type for access calls - fields invalid if status is WAIT
+*/
+struct MemoryResponse {
+  enum class Status { OK, WAIT };
 
-} memory_line;
+  Status   status;
+  bool     isLine;                  // Whether or not the returned data is a line or a word
+  uint32_t word;                    // Valid if OK and isLine == false
+  uint32_t line[WORDS_PER_LINE];    // Valid if OK and isLine == true
 
-class Memory {
+  // Creates a WAIT response with zeroed data
+  static MemoryResponse resWait() {
+    MemoryResponse r;
+    r.status = Status::WAIT;
+    r.isLine = false;
+    r.word   = 0;
+    for (int i = 0; i < WORDS_PER_LINE; i++) r.line[i] = 0;
+    return r;
+  }
 
-    word cByte;
-    word cLine;
+  // Creates an OK response with a single word
+  static MemoryResponse resWord(uint32_t data) {
+    MemoryResponse r;
+    r.status = Status::OK;
+    r.isLine = false;
+    r.word   = data;
+    for (int i = 0; i < WORDS_PER_LINE; i++) r.line[i] = 0;
+    return r;
+  }
 
-    byte_ blocked;
-    byte_ cooldown;
-    bool dataReady;
-
-    memory_line memory_data[MEMORY_LINE_SIZE]; // 2000 * 8 * 4 = 65kb
-
-    MEMmode mode;
-    byte_ memDelay;
-
-    std::array<int, 3> addressFind(word address);
-
-    int findWay(int setIndex, word tag) const;
-
-    int evictLRU(int setIndex) const;
-
-public:
-    Memory();
-
-    Memory(MEMmode mode, byte_ delay);
-
-    void initialize();
-
-    word readWord(word address);
-
-    void writeWord(word data, word address);
-
-    word writeWordED(word data);
-
-    byte_ isBusy();
-
-    int cycle();
-
-    bool isValid(word address) const;
-    bool isDirty(word address) const;
-    word getTag(word address) const;
-
-    void setValid(word address, bool v);
-    void setDirty(word address, bool d);
-
-    void fillLine(word address, const memory_line &line,
-        uint8_t owner_id = 0xFF, uint32_t cycle = 0);
-
-    memory_line evictLine(word address);
-
-    void dumpMem() const;
-
-    void loadMem(const std::string& file);
+  // Creates an OK response with a full line
+  static MemoryResponse resLine(const uint32_t* data) {
+    MemoryResponse r;
+    r.status = Status::OK;
+    r.isLine = true;
+    r.word   = 0;
+    for (int i = 0; i < WORDS_PER_LINE; i++) r.line[i] = data[i];
+    return r;
+  }
 
 };
 
-#endif //MEMORY_H
+
+/*
+* A single cache line, with words, tag, valid bit, and LRU counter
+*/
+struct CacheLine {
+  bool     valid;
+  uint32_t tag;
+  uint32_t data[WORDS_PER_LINE];
+  uint32_t lruCounter;    // Higher = more recently used
+
+  // Construction initializes to invalid line with zeros
+  CacheLine() : valid(false), tag(0), lruCounter(0) {
+    for (int i = 0; i < WORDS_PER_LINE; i++) data[i] = 0;
+  }
+};
+
+
+/*
+* Main memory class for managing the memory hierarchy, can be DRAM or cache depending on parameters
+*/
+class Memory {
+public:
+
+  Memory(uint32_t numLines,     
+         uint32_t delay,
+         Memory*  nextLevel,    // Pointer to lower level of memory
+         bool     returnsLine,  // Whether responses return full lines or single words (DRAM returns lines, L1 returns words)
+         uint32_t associativity = 1);
+
+
+  /*
+  * Front door functions - called by pipeline stages or higher levels of memory
+  */
+
+  // Load a word/line from the given address
+  MemoryResponse load(uint32_t address, AccessID id, bool isLine = false);
+
+  // Store a word to the given address
+  MemoryResponse storeWord(uint32_t address, uint32_t data, AccessID id);
+  MemoryResponse storeLine(uint32_t address, const uint32_t* data, AccessID id);
+
+  /*
+  * Back door functions - called when data is not resident
+  */
+  MemoryResponse loadFromNext(uint32_t address);
+  MemoryResponse storeWordNext(uint32_t address, uint32_t data);
+  MemoryResponse storeLineNext(uint32_t address, const uint32_t* data);
+
+
+  /*
+  * Side door access - immediate data fetching and updating for GUI or debugging
+  */
+
+  // Fetching data
+
+  // Read a single word directly by address
+  uint32_t peekWord(uint32_t address) const;
+
+  // Get a pointer to a full line of data
+  const uint32_t* peekLine(uint32_t lineIndex) const;
+
+  // Return a pointer to a CacheLine (includes metadata)
+  const CacheLine* peekCacheLine(uint32_t setIndex, uint32_t way) const;
+
+
+  // Updating data
+
+  // Write a single word instantly by address
+  void writeWordDirect(uint32_t address, uint32_t value);
+
+  // Load a binary program into memory starting at the given address
+  void loadProgram(const uint32_t* program,
+                   uint32_t        numWords,
+                   uint32_t        startAddress = 0);
+
+  // Reset all data and metadata to zero/invalid
+  void reset();
+
+
+  // Modifying configuration
+
+  // Enable or disable cache at runtime.
+  void setCacheEnabled(bool enabled);
+
+  // Change the delay for this level of memory
+  void setAccessDelay(int delay);
+
+
+  // Images
+
+  // Save a raw binary image of memory to file
+  void saveImage(const std::string& filename) const;
+
+  // Load a raw binary image of memory from file
+  void loadImage(const std::string& filename);
+
+
+  // Getter functions for metadata
+
+  bool     isCacheEnabled() const { return cacheEnabled; }
+  uint32_t getNumLines()    const { return numLines; }
+  uint32_t getMissCount()   const { return missCount; }
+  uint32_t getHitCount()    const { return hitCount; }
+  float    getMissRate()    const;
+  AccessID getCurrentID()   const { return currentID; }
+  MemOp    getCurrentOp()   const { return currentOp; }
+  uint32_t getCurrentAddress() const { return currentAddress; }
+  uint32_t getCurrentData() const { return currentData; }
+  uint32_t getDelayCount() const { return delayCount; }
+  uint32_t getAccessDelay() const { return accessDelay; }
+  const uint32_t* getCurrentLineData() const { return currentLineData; }
+
+
+private:
+
+  // Metadata
+
+  uint32_t  numLines;
+  uint32_t  associativity;    
+  uint32_t  numSets;          // numLines / associativity
+  bool      returnsLine;      // Whether front door call returns full lines
+  bool      cacheEnabled;     // Whether or not the cache is enabled (only changeable if level is a cache)
+  bool      isCache;          // Set true if this level is a cache at instantiation (nextLevel != null)
+  int       accessDelay;      
+  Memory*   nextLevel;        
+  mutable uint32_t peekLineBuffer[WORDS_PER_LINE];
+
+  // data[word_offset][line_index]
+  std::vector<uint32_t> data[WORDS_PER_LINE];
+
+  // lines[set_index][way]
+  std::vector<std::vector<CacheLine>> lines;
+
+  // Private variables for front door
+  bool      busy;
+  AccessID  currentID;
+  MemOp     currentOp;
+  uint32_t  currentAddress;
+  uint32_t  currentData;
+  int       delayCount;
+  bool      pendingWriteThrough;
+  uint32_t  currentLineData[WORDS_PER_LINE];  // Stores incoming line data
+
+
+  // Statistics
+  uint32_t  hitCount;
+  uint32_t  missCount;
+
+
+  // Helper functions
+
+  // Decompose a word address into tag, set index, and word offset
+  void decompose(uint32_t  address, uint32_t& tag, uint32_t& setIndex, uint32_t& wordOffset) const;
+
+  // Search a set for a matching valid tag, returns index or -1 on miss
+  int  findWay(uint32_t setIndex, uint32_t tag) const;
+
+  // Find the least-recently-used way in a set
+  int  findLRUWay(uint32_t setIndex) const;
+
+  // Update LRU counters
+  void updateLRU(uint32_t setIndex, uint32_t usedWay);
+
+  // Read/write by word address
+  uint32_t readWord(uint32_t address) const;
+  void     writeWord(uint32_t address, uint32_t value);
+
+  // Reset private variables when an operation is completed
+  void finishOperation();
+};
