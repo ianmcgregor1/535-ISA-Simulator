@@ -96,17 +96,19 @@ public:
   * Front door functions - called by pipeline stages or higher levels of memory
   */
 
-  // Load a word/line from the given address
-  MemoryResponse load(uint32_t address, AccessID id, bool isLine = false);
+  // Load a word or line from the given address
+  MemoryResponse loadWord(uint32_t address, AccessID id);
+  MemoryResponse loadLine(uint32_t address, AccessID id);
 
-  // Store a word to the given address
+  // Store a word or line to the given address
   MemoryResponse storeWord(uint32_t address, uint32_t data, AccessID id);
   MemoryResponse storeLine(uint32_t address, const uint32_t* data, AccessID id);
 
   /*
   * Back door functions - called when data is not resident
   */
-  MemoryResponse loadFromNext(uint32_t address);
+  MemoryResponse loadWordNext(uint32_t address);
+  MemoryResponse loadLineNext(uint32_t address);
   MemoryResponse storeWordNext(uint32_t address, uint32_t data);
   MemoryResponse storeLineNext(uint32_t address, const uint32_t* data);
 
@@ -227,6 +229,9 @@ private:
   // Read/write by word address
   uint32_t readWord(uint32_t address) const;
   void     writeWord(uint32_t address, uint32_t value);
+
+  // Helper to check if memory can accept a request, and set busy parameters if so
+  bool checkAndSetBusy(AccessID id, MemOp op, uint32_t address);
 
   // Reset private variables when an operation is completed
   void finishOperation();
