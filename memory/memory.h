@@ -89,7 +89,6 @@ public:
   Memory(uint32_t numLines,     
          uint32_t delay,
          Memory*  nextLevel,    // Pointer to lower level of memory
-         bool     returnsLine,  // Whether responses return full lines or single words (DRAM returns lines, L1 returns words)
          uint32_t associativity = 1);
 
 
@@ -183,7 +182,6 @@ private:
   uint32_t  numLines;
   uint32_t  associativity;    
   uint32_t  numSets;          // numLines / associativity
-  bool      returnsLine;      // Whether front door call returns full lines
   bool      cacheEnabled;     // Whether or not the cache is enabled (only changeable if level is a cache)
   bool      isCache;          // Set true if this level is a cache at instantiation (nextLevel != null)
   int       accessDelay;      

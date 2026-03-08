@@ -5,12 +5,11 @@
 #include <climits>
 #include <iostream>
 
-Memory::Memory(uint32_t numLines, uint32_t delay, Memory* nextLevel, bool returnsLine, uint32_t associativity) :
+Memory::Memory(uint32_t numLines, uint32_t delay, Memory* nextLevel, uint32_t associativity) :
     numLines(numLines),
     accessDelay(delay),
     associativity(associativity),
     numSets(numLines / associativity),
-    returnsLine(returnsLine),
     isCache(nextLevel != nullptr),
     cacheEnabled(nextLevel != nullptr),
     nextLevel(nextLevel),
