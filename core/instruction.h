@@ -52,12 +52,21 @@ enum class MiscOpcode : uint8_t {
 
 // Integer arithmetic (RegReg opcode 0, Immediate opcode 0)
 enum class IntArithFunct3 : uint8_t {
-    ADD  = 0, ADDI = 0,
-    SUB  = 1, SUBI = 1,
+    ADD  = 0,
+    SUB  = 1,
     NEG  = 2,
-    MUL  = 3, MULI = 2,
-    DIV  = 4, DIVI = 3,
-    REM  = 5, REMI = 4
+    MUL  = 3,
+    DIV  = 4,
+    REM  = 5
+};
+
+// Immediate arithmetic
+enum class ImmArithFunct3 : uint8_t {
+    ADDI = 0,
+    SUBI = 1,
+    MULI = 2,
+    DIVI = 3,
+    REMI = 4
 };
 
 // Float arithmetic (RegReg opcode 1)

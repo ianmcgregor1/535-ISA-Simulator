@@ -172,7 +172,7 @@ public:
   MemOp    getCurrentOp()   const { return currentOp; }
   uint32_t getCurrentAddress() const { return currentAddress; }
   uint32_t getCurrentData() const { return currentData; }
-  uint32_t getDelayCount() const { return delayCount; }
+  int      getDelayCount() const { return delayCount; }
   uint32_t getAccessDelay() const { return accessDelay; }
   const uint32_t* getCurrentLineData() const { return currentLineData; }
 

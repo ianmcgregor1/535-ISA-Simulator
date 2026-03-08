@@ -56,6 +56,10 @@ void RegisterFile::writeInt(uint8_t reg, int32_t value, WriteSource source) {
 
   // Special case - side door has full access
   if (source == WriteSource::SIDE_DOOR) {
+    if (reg == 1) {
+      writePC(value);  // Keep PC and x1 in sync
+      return;
+    }
     intRegs[reg] = value;
     return;
   }
