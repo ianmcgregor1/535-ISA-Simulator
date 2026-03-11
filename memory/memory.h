@@ -183,7 +183,7 @@ private:
   // Metadata
 
   uint32_t  numLines;
-  uint32_t  associativity;    
+  int       associativity;    
   uint32_t  numSets;          // numLines / associativity
   bool      cacheEnabled;     // Whether or not the cache is enabled (only changeable if level is a cache)
   bool      isCache;          // Set true if this level is a cache at instantiation (nextLevel != null)

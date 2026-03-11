@@ -18,7 +18,7 @@ Memory::Memory(uint32_t numLines, uint32_t delay, Memory* nextLevel, uint32_t as
     currentOp(MemOp::LOAD),
     currentAddress(0),
     currentData(0),
-    delayCount(-1),
+    delayCount(0),
     pendingWriteThrough(false),
     hitCount(0),
     missCount(0)
@@ -57,6 +57,7 @@ MemoryResponse Memory::loadWord(uint32_t address, AccessID id) {
 
   // If this is the DRAM level, return data
   if (!isCache) {
+    hitCount++;
     finishOperation();
     return MemoryResponse::resWord(readWord(address));
   }
@@ -87,11 +88,10 @@ MemoryResponse Memory::loadWord(uint32_t address, AccessID id) {
       return MemoryResponse::resWait(); // This shouldn't happen
     }
 
-    MemoryResponse r = loadWordNext(currentAddress);
+    MemoryResponse r = loadLineNext(currentAddress);
     // Forward a WAIT response
     if (r.status == MemoryResponse::Status::WAIT)
       return r;
-
     // Update miss count here so it isn't incremented on every cycle of waiting for the next level
     missCount++;
 
@@ -131,6 +131,7 @@ MemoryResponse Memory::loadLine(uint32_t address, AccessID id) {
 
   // If this is the DRAM level, return data
   if (!isCache) {
+    hitCount++;
     uint32_t lineIndex = (currentAddress / WORDS_PER_LINE) % numLines;
     uint32_t* lineData = data[lineIndex].data();
 
@@ -222,6 +223,7 @@ MemoryResponse Memory::storeWord(uint32_t address, uint32_t inData, AccessID id)
 
   // If this is the DRAM level, write directly to flat storage
   if (!isCache) {
+    hitCount++;
     writeWordDirect(currentAddress, currentData);
     finishOperation();
     return MemoryResponse::resWord(0);
@@ -294,6 +296,7 @@ MemoryResponse Memory::storeLine(uint32_t address, const uint32_t* inData, Acces
 
   // If this is the DRAM level, write line to flat storage
   if (!isCache) {
+    hitCount++;
     uint32_t lineIndex = (currentAddress / WORDS_PER_LINE) % numLines;
     for (int w = 0; w < WORDS_PER_LINE; w++)
       data[lineIndex][w] = currentLineData[w];
