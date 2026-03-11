@@ -1,5 +1,5 @@
 #include "../memory/memory.h"
-#include "registers.h"
+#include "../core/registers.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -291,19 +291,6 @@ int main() {
 
         std::cout << "  Unknown command. Use W, R, V, RG, LOAD, S, RST, or Q.\n";
     }
-
-    /*
-    DEMO:
-    1. Show empty memory                                        V M 0 2
-    2. Load test.hex into DRAM                                  LOAD test.hex  
-    3. Show populated memory and empty cache                    V M 0 2         V C 0 2
-    4. Show empty registers                                     RG
-    5. Read from memory (ping WAIT from same and different IDs) R 5 0 1     R 5 0 1     R 5 0 2     R 5 0 1
-    6. Show updated registers                                   RG      
-    7. Read from cache                                          R 6 0 1
-    8. Write to memory                                          W M 1 1 1 x3
-    9. Show updated memory and cache (write-through)            V M 0 2         V C 0 2
-    */
 
     return 0;
 }
