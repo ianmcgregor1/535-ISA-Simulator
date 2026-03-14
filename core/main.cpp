@@ -1,5 +1,5 @@
 #include "../memory/memory.h"
-#include "registers.h"
+#include "../core/registers.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -13,7 +13,7 @@ static constexpr uint32_t DRAM_LINES      = 8192;  // 8192 lines * 4 words = 32K
 static constexpr uint32_t DRAM_DELAY      = 3;
 static constexpr uint32_t CACHE_LINES_CFG = 8;     // minimum 8 lines per demo spec
 static constexpr uint32_t CACHE_DELAY     = 0;
-static constexpr uint32_t CACHE_ASSOC     = 1;     // direct-mapped
+static constexpr uint32_t CACHE_ASSOC     = 4;     // N-way set associative
 
 // Helper functions
 
@@ -38,22 +38,19 @@ static void printDRAMLine(Memory& dram, uint32_t address) {
               << " (addr " << address << ")"
               << " | data=[ ";
     for (int w = 0; w < WORDS_PER_LINE; w++)
-        std::cout << "0x" << std::hex << std::setw(8) << std::setfill('0')
-                  << line[w] << " ";
+        std::cout << line[w] << ", ";
     std::cout << std::dec << "]\n";
 }
 
 //  print a cache line with metadata (side door)
-static void printCacheLine(Memory& cache, uint32_t address) {
-    uint32_t setIndex = (address / WORDS_PER_LINE) % CACHE_LINES_CFG;
-    uint32_t way      = 0;
-
+static void printCacheLine(Memory& cache, uint32_t setIndex, uint32_t numWays) {
+  for (uint32_t way = 0; way < numWays; way++) {
     const CacheLine* cl = cache.peekCacheLine(setIndex, way);
     if (cl == nullptr) {
-        std::cout << "  [cache] peekCacheLine returned null (cache disabled?)\n";
-        return;
+      std::cout << "  Cache set " << setIndex << " way " << way
+                << " | [null - invalid set/way]\n";
+      continue;
     }
-
     std::cout << "  Cache set " << setIndex
               << " way " << way
               << " | tag="   << cl->tag
@@ -61,9 +58,9 @@ static void printCacheLine(Memory& cache, uint32_t address) {
               << " | lru="   << cl->lruCounter
               << " | data=[ ";
     for (int w = 0; w < WORDS_PER_LINE; w++)
-        std::cout << "0x" << std::hex << std::setw(8) << std::setfill('0')
-                  << cl->data[w] << " ";
+      std::cout << cl->data[w] << ", ";
     std::cout << std::dec << "]\n";
+  }
 }
 
 // print stats for both levels
@@ -214,6 +211,15 @@ int main() {
             continue;
         }
 
+        // Write Direct (no cycle count)
+        if (cmd == "WD") {
+          uint32_t val, addr;
+          if (!(ss >> val >> addr)) { std::cout << "  Usage: WD <value> <address>\n"; continue; }
+          dram.writeWordDirect(addr, val);
+          std::cout << "  Direct write: " << val << " -> DRAM[" << addr << "]\n";
+          continue;
+        }
+
         // READ 
         // One command = one clock cycle. Caller must re-issue each cycle until
         // done. On a miss the memory system counts down internally across calls.
@@ -244,8 +250,7 @@ int main() {
             regs.writeInt(static_cast<uint8_t>(regN),
                           static_cast<int32_t>(resp.word),
                           WriteSource::LOAD_STORE);
-            std::cout << "  DONE  x" << regN << " = 0x"
-                      << std::hex << std::setw(8) << std::setfill('0')
+            std::cout << "  DONE  x" << regN << " = "
                       << resp.word << std::dec << std::setfill(' ') << "\n";
             continue;
         }
@@ -266,7 +271,7 @@ int main() {
             if (level == 'M')
                 for (uint32_t m = min; m <= max; ++m) printDRAMLine(dram, m * WORDS_PER_LINE);
             else if (level == 'C')
-                for (uint32_t m = min; m <= max; ++m) printCacheLine(cache, m * WORDS_PER_LINE);
+                for (uint32_t m = min; m <= max; ++m) printCacheLine(cache, m, CACHE_ASSOC);
             else
                 std::cout << "  Level must be M (DRAM) or C (cache)\n";
             continue;
@@ -291,19 +296,6 @@ int main() {
 
         std::cout << "  Unknown command. Use W, R, V, RG, LOAD, S, RST, or Q.\n";
     }
-
-    /*
-    DEMO:
-    1. Show empty memory                                        V M 0 2
-    2. Load test.hex into DRAM                                  LOAD test.hex  
-    3. Show populated memory and empty cache                    V M 0 2         V C 0 2
-    4. Show empty registers                                     RG
-    5. Read from memory (ping WAIT from same and different IDs) R 5 0 1     R 5 0 1     R 5 0 2     R 5 0 1
-    6. Show updated registers                                   RG      
-    7. Read from cache                                          R 6 0 1
-    8. Write to memory                                          W M 1 1 1 x3
-    9. Show updated memory and cache (write-through)            V M 0 2         V C 0 2
-    */
 
     return 0;
 }
