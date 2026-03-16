@@ -147,8 +147,9 @@ enum class FloatConditionCode : uint8_t {
 // ─────────────────────────────────────────────
 
 struct Instruction {
-    uint32_t raw;           // The original 32-bit word, useful for debugging
+    uint32_t raw;           // The original 32-bit word
 
+    // Instruction fields - populated after decode
     InstructionType type;   // 3-bit type field, defines instruction format
     uint8_t  opcode;        // 4-bit opcode, meaning depends on type
     uint8_t  funct3;        // 3-bit function code
@@ -160,8 +161,18 @@ struct Instruction {
 
     int32_t  immediate;     // Sign-extended immediate value
 
+    // Additional fields populated during execution
+    int32_t rs1_value;      // Value read from first source register (after register file access)
+    int32_t rs2_value;      // Value read from second source register (after register file access)
+    int32_t result;         // Result of executing the instruction, to be written back to register file
+
+
+
+    // Flags
     bool     valid;         // False if instruction should be treated as NOP
     bool     isFloat;       // True if this instruction operates on FP registers
+    bool     squashed;      // True if this instruction was squashed by a branch instruction
+    bool     complete;
 
     std::string getCommonName() const; // Returns a short name like "ADD" or "BEQ", used by toString()
 

@@ -9,9 +9,8 @@ static int32_t signExtend(uint32_t value, int bits) {
   return static_cast<int32_t>(value);
 }
 
-Instruction decode(uint32_t raw) {
-  Instruction inst;
-  inst.raw   = raw;
+Instruction decode(Instruction inst) {
+  uint32_t raw = inst.raw;
   inst.valid = true;
 
   // Every instruction has a 3-bit type in bits 31-29
