@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <string>
 
+// Source for Writeback (permissions checked in RegisterFile)
+enum class WriteSource { ALU, LOAD_STORE, JUMP, PUSH_POP, PIPELINE, SIDE_DOOR };
 
 //  Instruction Types (3-bit, bits 31-29)
 enum class InstructionType : uint8_t {
@@ -147,6 +149,31 @@ enum class FloatConditionCode : uint8_t {
 // ─────────────────────────────────────────────
 
 struct Instruction {
+
+  // Default constructor — all fields zeroed
+  Instruction(uint32_t rawBits = 0)
+    : raw(rawBits),
+      type(InstructionType::INVALID),
+      opcode(0),
+      funct3(0),
+      funct7(0),
+      rs1(0),
+      rs2(0),
+      rd(0),
+      immediate(0),
+      rs1_value(0),
+      rs2_value(0),
+      result(0),
+      writeSource(WriteSource::ALU),
+      valid(true),
+      isFloat(false),
+      squashed(false),
+      fetched(false),
+      decoded(false),
+      executed(false),
+      memoryAccessed(false),
+      complete(false)
+  {}
     uint32_t raw;           // The original 32-bit word
 
     // Instruction fields - populated after decode
@@ -166,16 +193,24 @@ struct Instruction {
     int32_t rs2_value;      // Value read from second source register (after register file access)
     int32_t result;         // Result of executing the instruction, to be written back to register file
 
-
+    // Source (for Writeback)
+    WriteSource writeSource;
 
     // Flags
-    bool     valid;         // False if instruction should be treated as NOP
-    bool     isFloat;       // True if this instruction operates on FP registers
-    bool     squashed;      // True if this instruction was squashed by a branch instruction
-    bool     complete;
+    bool valid;         // False if instruction should be treated as NOP
+    bool isFloat;       // True if this instruction operates on FP registers
+    bool squashed;      // True if this instruction was squashed by a branch instruction
+
+    bool fetched;
+    bool decoded;
+    bool executed;
+    bool memoryAccessed;
+    bool complete;
+
 
     std::string getCommonName() const; // Returns a short name like "ADD" or "BEQ", used by toString()
 
     // Returns a human-readable string, useful for trace logs and the GUI
     std::string toString() const;
+
 };

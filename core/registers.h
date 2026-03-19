@@ -2,8 +2,6 @@
 #include <cstdint>
 #include "instruction.h"
 
-enum class WriteSource { ALU, LOAD_STORE, JUMP, PUSH_POP, PIPELINE, SIDE_DOOR };
-
 class RegisterFile {
 public:
   RegisterFile();           // Constructor
