@@ -163,13 +163,17 @@ struct Instruction {
       immediate(0),
       rs1_value(0),
       rs2_value(0),
+      fs1_value(0.0f),
+      fs2_value(0.0f),
       result(0),
+      fresult(0.0f),
       writeSource(WriteSource::ALU),
       valid(true),
       isFloat(false),
       squashed(false),
       fetched(false),
       decoded(false),
+      operandsRead(false),
       executed(false),
       memoryAccessed(false),
       complete(false)
@@ -189,9 +193,16 @@ struct Instruction {
     int32_t  immediate;     // Sign-extended immediate value
 
     // Additional fields populated during execution
-    int32_t rs1_value;      // Value read from first source register (after register file access)
-    int32_t rs2_value;      // Value read from second source register (after register file access)
+    int32_t rs1_value;      // Value read from first source register
+    int32_t rs2_value;      // Value read from second source register
+    float fs1_value;        // Value read from first source register if float
+    float fs2_value;        // Value read from second source register if float
+
     int32_t result;         // Result of executing the instruction, to be written back to register file
+    float fresult;          // Result of executing the instruction if float, to be written back to register file
+
+    IntConditionCode intCC;     // Integer condition code, set by integer ALU operations
+    FloatConditionCode floatCC; // Float condition code, set by float ALU operations
 
     // Source (for Writeback)
     WriteSource writeSource;
@@ -201,8 +212,10 @@ struct Instruction {
     bool isFloat;       // True if this instruction operates on FP registers
     bool squashed;      // True if this instruction was squashed by a branch instruction
 
+    // Progression flags
     bool fetched;
     bool decoded;
+    bool operandsRead;
     bool executed;
     bool memoryAccessed;
     bool complete;

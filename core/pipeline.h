@@ -69,8 +69,6 @@ private:
   bool memoryStalled;
   bool writebackStalled;
 
-  bool fetchComplete; // Whether or not the instruction at PC has been fetched
-
   // Register dependency arrays - updated by Decode and cleared by Writeback. 
   std::vector<uint8_t> intDependencies;
   std::vector<uint8_t> floatDependencies;

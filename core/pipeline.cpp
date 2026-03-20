@@ -1,12 +1,12 @@
 #include "pipeline.h"
-#include "./decoder.h"
-#include "./clock.h"
+#include "decoder.h"
+#include "clock.h"
 #include <cassert>
 #include <algorithm>
 #include <cstring>
 #include <iostream>
 
-// TODO - complete MEM, EX, DEC. Maybe add flags to instruction to indicate when each stage is complete.
+// TODO - complete MEM, EX, DEC. Use flags in instruction to indicate when each stage is complete. 
 // Need breakpoint support
 
 /*
@@ -58,7 +58,6 @@ Pipeline::Pipeline(Memory* cache, RegisterFile* regs)
     executeStalled(false),
     memoryStalled(false),
     writebackStalled(false),
-    fetchComplete(false),
     pipelineEnabled(true),
     inFlightCount(0)
 {
@@ -79,8 +78,6 @@ void Pipeline::reset() {
   executeStalled   = false;
   memoryStalled    = false;
   writebackStalled = false;
-
-  fetchComplete = false;
 
   intDependencies.clear();
   floatDependencies.clear();
@@ -173,12 +170,47 @@ Instruction Pipeline::execute(bool prevStalled) {
 // Calls Fetch for next instruction
 Instruction Pipeline::decode(bool prevStalled) {
 
-  Instruction incoming = fetch(false);
+  decodeStalled = false;
 
-  if (!decodeStalled)
-    decInst = incoming;
+  // If current instruction is valid and not decoded, decode it
+  if (decInst.valid && !decInst.decoded) {
+    decInst = decodeInstruction(decInst);
+    decInst.decoded = true;
+  }
 
-  return decodeStalled ? makeBubble() : decInst;
+  // If current instruction is valid and operands are not yet read, check for stall conditions
+  if (decInst.valid && !decInst.operandsRead) {
+    // If read-registers are pending, stall
+    if (isPending(decInst.rs1, decInst.isFloat) || isPending(decInst.rs2, decInst.isFloat)) {
+      decodeStalled = true;
+    } else {
+      // No hazard - read values from register file
+      if (decInst.isFloat) {
+        decInst.fs1_value = regs->readFloat(decInst.rs1);
+        decInst.fs2_value = regs->readFloat(decInst.rs2);
+      }
+      else {
+        decInst.rs1_value = regs->readInt(decInst.rs1);
+        decInst.rs2_value = regs->readInt(decInst.rs2);
+      }
+      decInst.operandsRead = true; // Mark that operands are read
+    }
+  }
+
+  // Call fetch for next instruction, passing stall status
+  Instruction incoming = fetch(decodeStalled || prevStalled);
+
+  // If decode is stalled, ignore return value, return bubble, and keep decInst the same
+  if (decodeStalled || prevStalled) {
+    return makeBubble();
+  }
+
+  // If no stall exists, update dependencies, return decoded instruction, and update decInst
+  addDest(getDestReg(decInst), decInst.isFloat);
+  Instruction oldInst = decInst;
+  decInst = incoming;
+  return oldInst;
+
 }
 
 // Fetch - called by Decode
@@ -191,8 +223,8 @@ Instruction Pipeline::fetch(bool prevStalled) {
     return makeBubble();
   }
 
-  // If fetch is stalled, then we need to continue getting the current instruction at PC
-  if (fetchStalled) {
+  // If current instruction is not fetched, ping memory for it regardless of stalled state.
+  if (!fetInst.fetched) {
 
     uint32_t pc = static_cast<uint32_t>(regs->readPC());
     MemoryResponse r = cache->loadWord(pc, AccessID::FETCH);
@@ -203,6 +235,7 @@ Instruction Pipeline::fetch(bool prevStalled) {
       Instruction inst = Instruction(r.word);
       regs->incrementPC();
       fetInst = inst;
+      fetInst.fetched = true;
     }
 
     if (r.status == MemoryResponse::Status::WAIT) {
@@ -211,14 +244,18 @@ Instruction Pipeline::fetch(bool prevStalled) {
       return makeBubble();
     }
   }
-  // If we make it here, either fetch is not stalled or we just got the instruction
+  // If we make it here, we have a fetched instruction
   
-  // If decode is not stalled, return value will be accepted. Must update accordingly
+  // If decode is not stalled, return value will be accepted
+  // Return fetched instruction and set fetInst to a new, unfetched instruction to prepare for next fetch
   if (!prevStalled) {
-    fetchStalled = true;
+    Instruction oldInst = fetInst;
+    fetInst = Instruction();
+    return oldInst;
   }
 
-  return fetInst;
+  // If decode is stalled, send it a bubble (will be ignored) and keep fetInst
+  return makeBubble();
 
   // TODO: Breakpoints
 }
@@ -229,12 +266,14 @@ Instruction Pipeline::fetch(bool prevStalled) {
 
 // Add destination register to dependency array
 void Pipeline::addDest(uint8_t reg, bool isFloat) {
+  if (reg == 0) return; // Register x0 is hardwired to zero, ignore as destination
   if (isFloat) floatDependencies.push_back(reg);
   else intDependencies.push_back(reg);
 }
 
 // Remove first instance of destination register from dependency array
 void Pipeline::removeDest(uint8_t reg, bool isFloat) {
+  if (reg == 0) return; // Register x0 is hardwired to zero, ignore as destination
   auto& list = isFloat ? floatDependencies : intDependencies;
   auto it = std::find(list.begin(), list.end(), reg);
   if (it != list.end())
@@ -243,6 +282,7 @@ void Pipeline::removeDest(uint8_t reg, bool isFloat) {
 
 // Check if the given destination register is in the dependency array
 bool Pipeline::isPending(uint8_t reg, bool isFloat) const {
+  if (reg == 0) return false; // Register x0 is hardwired to zero, ignore as destination
   const auto& list = isFloat ? floatDependencies : intDependencies;
   return std::find(list.begin(), list.end(), reg) != list.end();
 }
