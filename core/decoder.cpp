@@ -9,7 +9,7 @@ static int32_t signExtend(uint32_t value, int bits) {
   return static_cast<int32_t>(value);
 }
 
-Instruction decode(Instruction inst) {
+Instruction decodeInstruction(Instruction inst) {
   uint32_t raw = inst.raw;
   inst.valid = true;
 
@@ -28,6 +28,7 @@ Instruction decode(Instruction inst) {
       inst.rs2     = (raw >>  5) & 0x1F;
       inst.rd      = (raw >>  0) & 0x1F;
       inst.isFloat = (inst.opcode == 1); // Float arithmetic opcode
+      inst.writeSource = WriteSource::ALU;
 
       // Validity check for opcode, funct3, and float registers
       switch (inst.opcode) {
@@ -60,6 +61,7 @@ Instruction decode(Instruction inst) {
       inst.immediate = signExtend((raw >> 10) & 0xFFF, 12);
       inst.rs1       = (raw >>  5) & 0x1F;
       inst.rd        = (raw >>  0) & 0x1F;
+      inst.writeSource = inst.opcode == 4 ? WriteSource::JUMP : WriteSource::ALU;
 
       // Validity check for opcode and funct3
       switch (inst.opcode) {
@@ -91,6 +93,7 @@ Instruction decode(Instruction inst) {
       inst.rs1     = (raw >>  5) & 0x1F;
       inst.rs2     = (raw >>  0) & 0x1F;
       inst.isFloat = (inst.opcode == 1);
+      inst.writeSource = WriteSource::LOAD_STORE;
 
       // Validity check for opcode and funct3
       if (inst.opcode > 1 || inst.funct3 > 1) {
@@ -107,6 +110,7 @@ Instruction decode(Instruction inst) {
       // 31-29   28-5      4-0
       inst.immediate = signExtend((raw >> 5) & 0xFFFFFF, 24);
       inst.rd        = (raw >> 0) & 0x1F;
+      inst.writeSource = WriteSource::JUMP;
       break;
 
     case InstructionType::BRANCH:
@@ -116,6 +120,7 @@ Instruction decode(Instruction inst) {
       inst.immediate = signExtend((raw >> 10) & 0xFFFF, 16);
       inst.rs1       = (raw >>  5) & 0x1F;
       inst.rs2       = (raw >>  0) & 0x1F;
+      inst.writeSource = WriteSource::ALU;
 
       // Validity check for funct3
       if (inst.funct3 > 5) {
@@ -128,6 +133,7 @@ Instruction decode(Instruction inst) {
       // 31-29   28-26   25-5    4-0
       inst.funct3 = (raw >> 26) & 0x7;
       inst.rs1    = (raw >>  0) & 0x1F;
+      inst.writeSource = WriteSource::PUSH_POP;
 
       // Validity check for funct3
       if (inst.funct3 > 1) {

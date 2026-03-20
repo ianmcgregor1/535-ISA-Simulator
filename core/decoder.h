@@ -2,4 +2,4 @@
 #include <cstdint>
 #include "instruction.h"
 
-Instruction decode(Instruction raw);
+Instruction decodeInstruction(Instruction raw);
