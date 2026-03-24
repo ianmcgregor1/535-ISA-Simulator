@@ -90,5 +90,6 @@ void RegisterFile::writeFloatCC(FloatConditionCode code) {
 
 void RegisterFile::incrementPC() {
   pc += 1;
+  intRegs[1] = pc;
 }
 
