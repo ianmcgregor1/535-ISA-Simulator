@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstring>
 #include <iostream>
+#include "executor.h"
 
 // TODO - complete MEM, EX, DEC. Use flags in instruction to indicate when each stage is complete. 
 // Need breakpoint support
@@ -157,12 +158,41 @@ Instruction Pipeline::memory(bool prevStalled) {
 // Calls Decode for next instruction
 Instruction Pipeline::execute(bool prevStalled) {
   
-  Instruction incoming = decode(false);
+  // Reset stall flag
+  executeStalled = false;
 
-  if (!executeStalled)
-    exInst = incoming;
+  // If current instruction is valid and not executed, execute it or decrement count
+  if (exInst.valid && !exInst.executed) {
 
-  return executeStalled ? makeBubble() : exInst;
+    if (exInst.executionCycles > 0) {
+      // This is a multi-cycle instruction still in progress - decrement counter and stall
+      exInst.executionCycles--;
+      executeStalled = true;
+    }
+    else {
+      // This is a new instruction ready to execute - call executor
+      exInst = executeInstruction(exInst);
+      exInst.executed = true;
+
+      // Redirect PC if necessary
+      if (exInst.branchTaken) {
+        squashAndRedirect(exInst.branchTarget);
+      }
+    }
+  }
+
+  // Always call decode, passing whether execute is stalled
+  Instruction incoming = decode(executeStalled || prevStalled);
+
+  // If execute is stalled, ignore return value, return bubble, and keep exInst the same
+  if (executeStalled || prevStalled) {
+    return makeBubble();
+  }
+
+  // If no stall exists, update dependencies, return decoded instruction, and update exInst
+  Instruction oldInst = exInst;
+  exInst = incoming;
+  return oldInst;
 }
 
 // Decode - called by Execute
@@ -230,9 +260,10 @@ Instruction Pipeline::fetch(bool prevStalled) {
     MemoryResponse r = cache->loadWord(pc, AccessID::FETCH);
 
     if (r.status == MemoryResponse::Status::OK) {
-      // Cache responded - decode and advance PC
+      // Cache responded - decode and advance PC (store old PC in instruction for branching reference)
       fetchStalled = false;
       Instruction inst = Instruction(r.word);
+      inst.pc = regs->readPC();
       regs->incrementPC();
       fetInst = inst;
       fetInst.fetched = true;
