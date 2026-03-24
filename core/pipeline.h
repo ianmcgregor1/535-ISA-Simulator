@@ -75,8 +75,8 @@ private:
 
   bool pipelineEnabled;
 
-  // Check for disable mode - increments at fetch and decrements at writeback
-  uint32_t inFlightCount;
+  // Check for disable mode - set true at fetch and false at writeback
+  bool inFlight;
 
   // Methods for each stage
   // Each takes the stalled state from the previous stage as input and returns the instruction to be processed by the next

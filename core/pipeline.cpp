@@ -7,8 +7,7 @@
 #include <iostream>
 #include "executor.h"
 
-// TODO - complete MEM, EX, DEC. Use flags in instruction to indicate when each stage is complete. 
-// Need breakpoint support
+// TODO - Need breakpoint support
 
 /*
 * Helper functions
@@ -26,11 +25,17 @@ static Instruction makeBubble() {
 static uint8_t getDestReg(const Instruction& inst) {
   switch (inst.type) {
     case InstructionType::LOAD_STORE:
-      return inst.rs2;    // LW/LWF: rs2 = *rs1
+      if (inst.funct3 == static_cast<uint8_t>(LoadStoreFunct3::STORE))
+        return 0;   // Store has no destination — write to x0 is discarded
+      return inst.rs2;   // Load: rs2 = *rs1
+
     case InstructionType::PUSH_POP:
-      return inst.rs1;    // POP: rs1 = *sp
+      if (inst.funct3 == static_cast<uint8_t>(PushPopFunct3::PUSH))
+        return 0;   // Push has no destination
+      return inst.rs1;   // Pop: rs1 = *sp
+
     default:
-      return inst.rd;     // All other instructions write to rd
+      return inst.rd;
   }
 }
 
@@ -41,11 +46,18 @@ static bool isJumpAndLink(const Instruction& inst) {
           inst.opcode == static_cast<uint8_t>(ImmediateOpcode::JALR));
 }
 
-// Reinterpret int32_t bits as float — avoids undefined behavior from cast
+// Reinterpret int32_t bits as float
 static float bitsToFloat(int32_t bits) {
   float f;
   std::memcpy(&f, &bits, sizeof(float));
   return f;
+}
+
+// Reinterpret float to int32_t bits
+static int32_t floatToBits(float f) {
+  int32_t bits;
+  std::memcpy(&bits, &f, sizeof(int32_t));
+  return bits;
 }
 
 // Constructor
@@ -60,7 +72,7 @@ Pipeline::Pipeline(Memory* cache, RegisterFile* regs)
     memoryStalled(false),
     writebackStalled(false),
     pipelineEnabled(true),
-    inFlightCount(0)
+    inFlight(false)
 {
   reset();
 }
@@ -83,7 +95,7 @@ void Pipeline::reset() {
   intDependencies.clear();
   floatDependencies.clear();
 
-  inFlightCount = 0;
+  inFlight = false;
 }
 
 void Pipeline::setPipelineEnabled(bool enabled) {
@@ -104,8 +116,11 @@ Instruction Pipeline::writeback() {
   // Writeback is never stalled, but set here for consistency
   writebackStalled = false;
 
+  // Get distination register
+  uint8_t dest = getDestReg(wbInst);
+
   // Process current instruction
-  if (wbInst.valid && !wbInst.squashed) {
+  if (wbInst.valid) {
 
     // Notify clock on halt
     if (wbInst.type == InstructionType::MISC && wbInst.opcode == static_cast<uint8_t>(MiscOpcode::HLT)) {
@@ -114,22 +129,23 @@ Instruction Pipeline::writeback() {
 
     /* Writeback */
 
-    // Get distination register
-    uint8_t dest = getDestReg(wbInst);
-
     // Write to destination register (RegisterFile handles permissions)
     if (wbInst.isFloat) {
-      regs->writeFloat(dest, bitsToFloat(wbInst.result));
+      regs->writeFloat(dest, wbInst.fresult);
     }
     else {
       regs->writeInt(dest, wbInst.result, wbInst.writeSource);
     }
 
-    // Instruction out of pipeline, update accordingly
-    removeDest(dest, wbInst.isFloat);
-    clock->onInstructionRetired();
-    inFlightCount -= 1;
+    // Set inFlight if necessary
+    if (!pipelineEnabled) {
+      inFlight = false;
+    }
   }
+
+  // Instruction out of pipeline, update accordingly
+  removeDest(dest, wbInst.isFloat);
+  clock->onInstructionRetired();
 
   // Call Memory to get new instruction
   Instruction oldInst = wbInst;
@@ -144,13 +160,100 @@ Instruction Pipeline::writeback() {
 // Performs load/store instructions and returns populated Instruction
 // Calls Execute for next instruction
 Instruction Pipeline::memory(bool prevStalled) {
-  
-  Instruction incoming = execute(false);
 
-  if (!memoryStalled)
-    memInst = incoming;
+  memoryStalled = false;
 
-  return memoryStalled ? makeBubble() : memInst;
+  // If current instruction is valid and incomplete, ping memory
+  if (memInst.valid && !memInst.memoryAccessed) {
+
+    // Only do anything if instruction actually needs to access memory
+    switch (memInst.type) {
+
+      case InstructionType::LOAD_STORE: {
+
+        if (memInst.funct3 == static_cast<uint8_t>(LoadStoreFunct3::LOAD)) {
+          // Load - request word from cache
+          MemoryResponse r = cache->loadWord(memInst.memAddress, AccessID::MEMORY);
+
+          if (r.status == MemoryResponse::Status::WAIT) {
+            // If response is wait, stall
+            memoryStalled = true;
+          } else {
+            // If response is ok, store in result or fresult
+            if (memInst.isFloat)
+              memInst.fresult = bitsToFloat(r.word);
+            else
+              memInst.result = static_cast<int32_t>(r.word);
+            memInst.memoryAccessed = true;
+            memoryStalled = false;
+          }
+        }
+        else {
+          // Store - write word to cache
+          // Second register holds the value to store, memAddress holds the target
+          uint32_t storeData = memInst.isFloat ? static_cast<uint32_t>(floatToBits(memInst.fs2_value)) : static_cast<uint32_t>(memInst.rs2_value);
+
+          MemoryResponse r = cache->storeWord(memInst.memAddress, storeData, AccessID::MEMORY);
+
+          if (r.status == MemoryResponse::Status::WAIT) {
+            memoryStalled = true;
+          } else {
+            memInst.memoryAccessed = true;
+            memoryStalled = false;
+          }
+        }
+        break;
+      }
+      /* Push/Pop still TODO, this is not tested
+      case InstructionType::PUSH_POP: {
+
+        if (memInst.funct3 == static_cast<uint8_t>(PushPopFunct3::POP)) {
+          // POP - load from stack pointer address
+          // sp value was read into rs1_value by decode (x2 = sp)
+          uint32_t spAddr = static_cast<uint32_t>(memInst.rs1_value);
+          MemoryResponse r = cache->loadWord(spAddr, AccessID::EXECUTE);
+
+          if (r.status == MemoryResponse::Status::WAIT) {
+            memoryStalled = true;
+          } else {
+            memInst.result = static_cast<int32_t>(r.word);
+            memInst.complete = true;
+          }
+        }
+        else {
+          // PUSH - store rs1_value to stack pointer address
+          uint32_t spAddr    = static_cast<uint32_t>(memInst.rs1_value);
+          uint32_t pushData  = static_cast<uint32_t>(memInst.rs2_value);
+          MemoryResponse r   = cache->storeWord(spAddr, pushData, AccessID::EXECUTE);
+
+          if (r.status == MemoryResponse::Status::WAIT) {
+            memoryStalled = true;
+          } else {
+            memInst.complete = true;
+          }
+        }
+        break;
+      }
+      */
+
+      default: // All other instruction types have no memory work, mark as done
+        memInst.memoryAccessed = true;
+        break;
+    }
+  }
+
+  // Always call execute, pass stall state
+  Instruction incoming = execute(memoryStalled || prevStalled);
+
+  // If stalled, hold memInst and return bubble
+  if (memoryStalled || prevStalled) {
+    return makeBubble();
+  }
+
+  // No stall — advance
+  Instruction oldInst = memInst;
+  memInst = incoming;
+  return oldInst;
 }
 
 // Execute - called by Memory
@@ -248,7 +351,7 @@ Instruction Pipeline::decode(bool prevStalled) {
 Instruction Pipeline::fetch(bool prevStalled) {
 
   // If pipeline is disabled, do nothing until current instruction retires
-  if (!pipelineEnabled && inFlightCount > 0) {
+  if (!pipelineEnabled && inFlight) {
     fetchStalled = true;
     return makeBubble();
   }
@@ -272,21 +375,23 @@ Instruction Pipeline::fetch(bool prevStalled) {
     if (r.status == MemoryResponse::Status::WAIT) {
       // Cache not ready - stall and re-issue same address next cycle
       fetchStalled = true;
-      return makeBubble();
     }
   }
-  // If we make it here, we have a fetched instruction
   
-  // If decode is not stalled, return value will be accepted
-  // Return fetched instruction and set fetInst to a new, unfetched instruction to prepare for next fetch
-  if (!prevStalled) {
-    Instruction oldInst = fetInst;
-    fetInst = Instruction();
-    return oldInst;
+  // If stalled, return bubble, otherwise continue
+  if (fetchStalled || prevStalled) {
+    return makeBubble();
   }
 
-  // If decode is stalled, send it a bubble (will be ignored) and keep fetInst
-  return makeBubble();
+  // Set inFlight if necessary
+  if (!pipelineEnabled && fetInst.valid) {
+    inFlight = true;
+  }
+
+  // Return fetched instruction and set fetInst to a new, unfetched instruction to prepare for next fetch
+  Instruction oldInst = fetInst;
+  fetInst = Instruction();
+  return oldInst;  
 
   // TODO: Breakpoints
 }

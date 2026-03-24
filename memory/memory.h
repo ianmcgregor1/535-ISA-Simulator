@@ -11,7 +11,8 @@ constexpr int WORDS_PER_LINE = 4;
 enum class AccessID {
   NONE,       // No current request
   FETCH,      // Fetch pipeline stage
-  EXECUTE,    // Execute / memory pipeline stage
+  EXECUTE,    // Execute pipeline stage
+  MEMORY,     // Memory pipeline stage
   L1,         // L1 cache requesting from DRAM
   UI          // Side-door GUI access - no restrictions
 };

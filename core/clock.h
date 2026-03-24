@@ -53,7 +53,7 @@ public:
   // Called by Fetch when PC matches a breakpoint
   void onBreakpoint();
 
-  // Called by Writeback each time a valid instruction retires
+  // Called by Writeback each time an instruction retires
   void onInstructionRetired();
 
   void reset();
