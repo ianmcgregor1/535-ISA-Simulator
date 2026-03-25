@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <string>
 
+// Source for Writeback (permissions checked in RegisterFile)
+enum class WriteSource { ALU, LOAD_STORE, JUMP, PUSH_POP, PIPELINE, SIDE_DOOR };
 
 //  Instruction Types (3-bit, bits 31-29)
 enum class InstructionType : uint8_t {
@@ -147,8 +149,44 @@ enum class FloatConditionCode : uint8_t {
 // ─────────────────────────────────────────────
 
 struct Instruction {
-    uint32_t raw;           // The original 32-bit word, useful for debugging
 
+  // Default constructor — all fields zeroed
+  Instruction(uint32_t rawBits = 0)
+    : raw(rawBits),
+      type(InstructionType::INVALID),
+      opcode(0),
+      funct3(0),
+      funct7(0),
+      rs1(0),
+      rs2(0),
+      rd(0),
+      immediate(0),
+      executionCycles(0),
+      rs1_value(0),
+      rs2_value(0),
+      fs1_value(0.0f),
+      fs2_value(0.0f),
+      result(0),
+      fresult(0.0f),
+      memAddress(0),
+      branchTarget(0),
+      writeSource(WriteSource::ALU),
+      valid(true),
+      isFloat(false),
+      squashed(false),
+      branchTaken(false),
+      fetched(false),
+      decoded(false),
+      operandsRead(false),
+      executed(false),
+      memoryAccessed(false),
+      complete(false)
+  {}
+    uint32_t raw;           // The original 32-bit word
+
+    uint32_t pc;            // The PC value of this instruction, for branching reference
+
+    // Instruction fields - populated after decode
     InstructionType type;   // 3-bit type field, defines instruction format
     uint8_t  opcode;        // 4-bit opcode, meaning depends on type
     uint8_t  funct3;        // 3-bit function code
@@ -160,11 +198,44 @@ struct Instruction {
 
     int32_t  immediate;     // Sign-extended immediate value
 
-    bool     valid;         // False if instruction should be treated as NOP
-    bool     isFloat;       // True if this instruction operates on FP registers
+    uint8_t  executionCycles; // Number of cycles needed in Execute stage, for multi-cycle instructions
+
+    // Additional fields populated during execution
+    int32_t rs1_value;      // Value read from first source register
+    int32_t rs2_value;      // Value read from second source register
+    float fs1_value;        // Value read from first source register if float
+    float fs2_value;        // Value read from second source register if float
+
+    int32_t result;         // Result of executing the instruction, to be written back to register file - memory instructions will compute effective address here
+    float fresult;          // Result of executing the instruction if float, to be written back to register file
+
+    uint32_t memAddress;    // Memory address for load/store instructions, for Memory stage to use
+    uint32_t branchTarget;  // Target address for branch or jump instructions, for Pipeline to use
+
+    IntConditionCode intCC;     // Integer condition code, set by integer ALU operations
+    FloatConditionCode floatCC; // Float condition code, set by float ALU operations
+
+    // Source (for Writeback)
+    WriteSource writeSource;
+
+    // Flags
+    bool valid;         // False if instruction should be treated as NOP
+    bool isFloat;       // True if this instruction operates on FP registers
+    bool squashed;      // True if this instruction was squashed by a branch instruction
+    bool branchTaken;   // True if this instruction is a branch or jump to be taken
+
+    // Progression flags
+    bool fetched;
+    bool decoded;
+    bool operandsRead;
+    bool executed;
+    bool memoryAccessed;
+    bool complete;
+
 
     std::string getCommonName() const; // Returns a short name like "ADD" or "BEQ", used by toString()
 
     // Returns a human-readable string, useful for trace logs and the GUI
     std::string toString() const;
+
 };

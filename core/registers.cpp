@@ -26,7 +26,7 @@ float RegisterFile::readFloat(uint8_t reg) const {
   return floatRegs[reg];
 }
 
-int32_t RegisterFile::readPC() const {
+uint32_t RegisterFile::readPC() const {
   return pc;
 }
 
@@ -75,7 +75,7 @@ void RegisterFile::writeFloat(uint8_t reg, float value) {
   floatRegs[reg] = value;
 }
 
-void RegisterFile::writePC(int32_t value) {
+void RegisterFile::writePC(uint32_t value) {
   pc = value;
   intRegs[1] = value;  // Keep x1 in sync with PC
 }
@@ -90,5 +90,6 @@ void RegisterFile::writeFloatCC(FloatConditionCode code) {
 
 void RegisterFile::incrementPC() {
   pc += 1;
+  intRegs[1] = pc;
 }
 
