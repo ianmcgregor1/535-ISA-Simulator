@@ -102,11 +102,12 @@ void Pipeline::setPipelineEnabled(bool enabled) {
   pipelineEnabled = enabled;
 }
 
-void Pipeline::tick() {
+Instruction Pipeline::tick() {
   assert(clock != nullptr && "Pipeline::tick called before setClock");
 
   // Call writeback
   Instruction completedInst = writeback();
+  return completedInst;
 }
 
 // Writeback - called by tick()
@@ -145,6 +146,7 @@ Instruction Pipeline::writeback() {
 
   // Instruction out of pipeline, update accordingly
   removeDest(dest, wbInst.isFloat);
+  wbInst.complete = true;
   clock->onInstructionRetired();
 
   // Call Memory to get new instruction
@@ -376,6 +378,11 @@ Instruction Pipeline::fetch(bool prevStalled) {
       // Cache not ready - stall and re-issue same address next cycle
       fetchStalled = true;
     }
+  }
+
+  // If address of fetched instruction is a breakpoint, notify clock
+  if (fetInst.fetched && clock && clock->isBreakpoint(fetInst.pc)) {
+    clock -> onBreakpoint();
   }
   
   // If stalled, return bubble, otherwise continue

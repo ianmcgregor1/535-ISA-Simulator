@@ -20,7 +20,7 @@ public:
   void setClock(Clock* clock) { this->clock = clock; }
 
   // Execute one full pipeline cycle. Called by Clock
-  void tick();
+  Instruction tick();
 
   // Reset all inter-stage registers to bubbles
   void reset();
