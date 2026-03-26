@@ -3,7 +3,7 @@
 #include <vector>
 
 class Pipeline;
-class UI; // To be used later
+class GUI; // To be used later
 
 
 // Enum for why the clock is halted - used by GUI
@@ -19,10 +19,11 @@ enum class HaltReason {
 class Clock {
 public:
 
-  Clock(UI* ui);
+  Clock();
 
-  // Set the pipeline outside the constructor to avoid circular dependency
+  // Set the pipeline and UI outside the constructor to avoid circular dependency
   void setPipeline(Pipeline* pipeline) { this->pipeline = pipeline; }
+  void setGUI(GUI* ui) { this->ui = ui; }
 
   // Run the loop until a halt condition is triggered
   void run();
@@ -48,13 +49,13 @@ public:
   /* Notifications from pipeline */
 
   // Called by Writeback when HLT reaches it
-  void onHalt();
+  virtual void onHalt();
 
   // Called by Fetch when PC matches a breakpoint
-  void onBreakpoint();
+  virtual void onBreakpoint();
 
   // Called by Writeback each time an instruction retires
-  void onInstructionRetired();
+  virtual void onInstructionRetired();
 
   void reset();
 
@@ -68,7 +69,7 @@ public:
 private:
 
   Pipeline* pipeline = nullptr; // Explicitly null until set
-  UI* ui;
+  GUI* ui;
 
   // Counters
   int32_t cycleCount;   // Total cycles executed since last reset
