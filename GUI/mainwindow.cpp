@@ -296,7 +296,10 @@ void MainWindow::buildToolbar() {
     m_batchSpin->setFixedWidth(70);
     m_batchSpin->setToolTip("Refresh UI every N instructions");
 
-    // ← ADD THESE TWO LINES HERE
+    m_progressBar = new QProgressBar(bar);
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setVisible(false);
+
     m_cycleLabel = new QLabel("CYCLES: 0", bar);
     m_cycleLabel->setObjectName("cycleLabel");
 
@@ -765,9 +768,9 @@ void MainWindow::onModeChanged(int index) {
 void MainWindow::onWorkerProgress(int completed) {
     m_progressBar->setValue(completed);
     // Batch-throttled UI refresh during run
-    m_cmdCount += (completed - m_progressBar->value() + 1);
+    //m_cmdCount += (completed - m_progressBar->value() + 1);
     refreshStats();
-    m_cycleLabel->setText(QString("CYCLES: %1").arg(m_cmdCount));
+    m_cycleLabel->setText(QString("CYCLES: %1").arg(completed));
 }
 
 void MainWindow::onWorkerDone() {
