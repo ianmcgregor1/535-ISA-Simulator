@@ -1,0 +1,13 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "my-windows",
+      "displayName": "My Machine",
+      "inherits": "windows-default",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.10.2/msvc2022_64"
+      }
+    }
+  ]
+}

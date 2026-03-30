@@ -2,6 +2,9 @@
 #include <cstring>
 #include <iostream>
 #include <climits>
+#include <cmath>
+#include <limits>
+#include <cfloat>
 
 // Bit conversion helpers
 static float bitsToFloat(int32_t bits) {
