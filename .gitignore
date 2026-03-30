@@ -44,3 +44,5 @@
 .vscode/
 build/
 CMakeLists.txt
+CMakePresets.json
+CMakeUserPresets.json
