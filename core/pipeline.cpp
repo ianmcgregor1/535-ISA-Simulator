@@ -20,6 +20,12 @@ static Instruction makeBubble() {
   return inst;
 }
 
+static Instruction makeSquashedBubble() {
+  Instruction inst = makeBubble();
+  inst.squashed = true;
+  return inst;
+}
+
 // Returns the destination register for an instruction.
 // Only meaningful if hasDestination() is true.
 static uint8_t getDestReg(const Instruction& inst) {
@@ -145,7 +151,10 @@ Instruction Pipeline::writeback() {
   }
 
   // Instruction out of pipeline, update accordingly
-  removeDest(dest, wbInst.isFloat);
+  if (wbInst.dependencyTracked) {
+    removeDest(dest, wbInst.isFloat);
+    wbInst.dependencyTracked = false;
+  }
   wbInst.complete = true;
   if (wbInst.valid && !wbInst.squashed) {
     clock->onInstructionRetired();
@@ -343,7 +352,10 @@ Instruction Pipeline::decode(bool prevStalled) {
   }
 
   // If no stall exists, update dependencies, return decoded instruction, and update decInst
-  addDest(getDestReg(decInst), decInst.isFloat);
+  if (decInst.valid && !decInst.squashed) {
+    addDest(getDestReg(decInst), decInst.isFloat);
+    decInst.dependencyTracked = (getDestReg(decInst) != 0);
+  }
   Instruction oldInst = decInst;
   decInst = incoming;
   return oldInst;
@@ -436,11 +448,15 @@ bool Pipeline::isPending(uint8_t reg, bool isFloat) const {
 // Called by Execute when a branch is determined to be taken.
 // Squashes the instructions currently in Fetch and Decode, then updates PC
 void Pipeline::squashAndRedirect(uint32_t targetAddress) {
+  if (fetInst.dependencyTracked) {
+    removeDest(getDestReg(fetInst), fetInst.isFloat);
+  }
+  if (decInst.dependencyTracked) {
+    removeDest(getDestReg(decInst), decInst.isFloat);
+  }
 
-  fetInst.squashed = true;
-  fetInst.valid = false;
-  decInst.squashed = true;
-  decInst.valid = false;
+  fetInst = makeSquashedBubble();
+  decInst = makeSquashedBubble();
 
   regs->writePC(static_cast<int32_t>(targetAddress));
 }

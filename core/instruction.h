@@ -180,7 +180,8 @@ struct Instruction {
       operandsRead(false),
       executed(false),
       memoryAccessed(false),
-      complete(false)
+      complete(false),
+      dependencyTracked(false)
   {}
     uint32_t raw;           // The original 32-bit word
 
@@ -231,6 +232,7 @@ struct Instruction {
     bool executed;
     bool memoryAccessed;
     bool complete;
+    bool dependencyTracked;
 
 
     std::string getCommonName() const; // Returns a short name like "ADD" or "BEQ", used by toString()
