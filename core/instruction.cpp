@@ -111,7 +111,9 @@ std::string Instruction::getCommonName() const {
 }
 
 std::string Instruction::toString() const {
-  if (!valid) return "NOP";
+  if (squashed) return "Squashed";
+  if (!valid && !fetched) return "Idle";
+  if (!valid) return "Bubble";
 
   std::string name = getCommonName();
   std::string x = isFloat ? "f" : "x";

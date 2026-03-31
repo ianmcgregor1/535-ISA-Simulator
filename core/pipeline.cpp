@@ -121,7 +121,7 @@ Instruction Pipeline::writeback() {
   uint8_t dest = getDestReg(wbInst);
 
   // Process current instruction
-  if (wbInst.valid) {
+  if (wbInst.valid && !wbInst.squashed) {
 
     // Notify clock on halt
     if (wbInst.type == InstructionType::MISC && wbInst.opcode == static_cast<uint8_t>(MiscOpcode::HLT)) {
@@ -147,7 +147,9 @@ Instruction Pipeline::writeback() {
   // Instruction out of pipeline, update accordingly
   removeDest(dest, wbInst.isFloat);
   wbInst.complete = true;
-  clock->onInstructionRetired();
+  if (wbInst.valid && !wbInst.squashed) {
+    clock->onInstructionRetired();
+  }
 
   // Call Memory to get new instruction
   Instruction oldInst = wbInst;
@@ -166,7 +168,7 @@ Instruction Pipeline::memory(bool prevStalled) {
   memoryStalled = false;
 
   // If current instruction is valid and incomplete, ping memory
-  if (memInst.valid && !memInst.memoryAccessed) {
+  if (memInst.valid && !memInst.squashed && !memInst.memoryAccessed) {
 
     // Only do anything if instruction actually needs to access memory
     switch (memInst.type) {
@@ -267,7 +269,7 @@ Instruction Pipeline::execute(bool prevStalled) {
   executeStalled = false;
 
   // If current instruction is valid and not executed, execute it or decrement count
-  if (exInst.valid && !exInst.executed) {
+  if (exInst.valid && !exInst.squashed && !exInst.executed) {
 
     if (exInst.executionCycles > 0) {
       // This is a multi-cycle instruction still in progress - decrement counter and stall
@@ -308,13 +310,13 @@ Instruction Pipeline::decode(bool prevStalled) {
   decodeStalled = false;
 
   // If current instruction is valid and not decoded, decode it
-  if (decInst.valid && !decInst.decoded) {
+  if (decInst.valid && !decInst.squashed && !decInst.decoded) {
     decInst = decodeInstruction(decInst);
     decInst.decoded = true;
   }
 
   // If current instruction is valid and operands are not yet read, check for stall conditions
-  if (decInst.valid && !decInst.operandsRead) {
+  if (decInst.valid && !decInst.squashed && !decInst.operandsRead) {
     // If read-registers are pending, stall
     if (isPending(decInst.rs1, decInst.isFloat) || isPending(decInst.rs2, decInst.isFloat)) {
       decodeStalled = true;
@@ -391,7 +393,7 @@ Instruction Pipeline::fetch(bool prevStalled) {
   }
 
   // Set inFlight if necessary
-  if (!pipelineEnabled && fetInst.valid) {
+  if (!pipelineEnabled && fetInst.valid && !fetInst.squashed) {
     inFlight = true;
   }
 
@@ -435,7 +437,9 @@ bool Pipeline::isPending(uint8_t reg, bool isFloat) const {
 // Squashes the instructions currently in Fetch and Decode, then updates PC
 void Pipeline::squashAndRedirect(uint32_t targetAddress) {
 
+  fetInst.squashed = true;
   fetInst.valid = false;
+  decInst.squashed = true;
   decInst.valid = false;
 
   regs->writePC(static_cast<int32_t>(targetAddress));

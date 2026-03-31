@@ -61,7 +61,11 @@ static std::string stageLabel(const std::string& name, bool stalled) {
 static void printInstruction(const std::string& label, const Instruction& inst, bool stalled) {
   std::cout << "  " << std::left << std::setw(18) << stageLabel(label, stalled);
 
-  if (!inst.valid) {
+  if (inst.squashed) {
+    std::cout << "  --- squashed ---\n";
+    return;
+  }
+  else if (!inst.valid) {
     std::cout << "  --- bubble ---\n";
     return;
   }
