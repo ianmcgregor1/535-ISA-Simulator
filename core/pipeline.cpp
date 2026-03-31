@@ -451,12 +451,16 @@ void Pipeline::squashAndRedirect(uint32_t targetAddress) {
   if (fetInst.dependencyTracked) {
     removeDest(getDestReg(fetInst), fetInst.isFloat);
   }
+  fetInst.dependencyTracked = false;
+  fetInst.squashed = true; // Mark as squashed for UI
+  fetInst.valid = false;  // Mark as invalid to prevent any side effects
+  
   if (decInst.dependencyTracked) {
     removeDest(getDestReg(decInst), decInst.isFloat);
   }
-
-  fetInst = makeSquashedBubble();
-  decInst = makeSquashedBubble();
+  decInst.dependencyTracked = false;
+  decInst.squashed = true; // Mark as squashed for UI 
+  decInst.valid = false;  // Mark as invalid to prevent any side effects
 
   regs->writePC(static_cast<int32_t>(targetAddress));
 }
