@@ -20,6 +20,12 @@ static Instruction makeBubble() {
   return inst;
 }
 
+static Instruction makeSquashedBubble() {
+  Instruction inst = makeBubble();
+  inst.squashed = true;
+  return inst;
+}
+
 // Returns the destination register for an instruction.
 // Only meaningful if hasDestination() is true.
 static uint8_t getDestReg(const Instruction& inst) {
@@ -121,7 +127,7 @@ Instruction Pipeline::writeback() {
   uint8_t dest = getDestReg(wbInst);
 
   // Process current instruction
-  if (wbInst.valid) {
+  if (wbInst.valid && !wbInst.squashed) {
 
     // Notify clock on halt
     if (wbInst.type == InstructionType::MISC && wbInst.opcode == static_cast<uint8_t>(MiscOpcode::HLT)) {
@@ -145,9 +151,14 @@ Instruction Pipeline::writeback() {
   }
 
   // Instruction out of pipeline, update accordingly
-  removeDest(dest, wbInst.isFloat);
+  if (wbInst.dependencyTracked) {
+    removeDest(dest, wbInst.isFloat);
+    wbInst.dependencyTracked = false;
+  }
   wbInst.complete = true;
-  clock->onInstructionRetired();
+  if (wbInst.valid && !wbInst.squashed) {
+    clock->onInstructionRetired();
+  }
 
   // Call Memory to get new instruction
   Instruction oldInst = wbInst;
@@ -166,7 +177,7 @@ Instruction Pipeline::memory(bool prevStalled) {
   memoryStalled = false;
 
   // If current instruction is valid and incomplete, ping memory
-  if (memInst.valid && !memInst.memoryAccessed) {
+  if (memInst.valid && !memInst.squashed && !memInst.memoryAccessed) {
 
     // Only do anything if instruction actually needs to access memory
     switch (memInst.type) {
@@ -267,7 +278,7 @@ Instruction Pipeline::execute(bool prevStalled) {
   executeStalled = false;
 
   // If current instruction is valid and not executed, execute it or decrement count
-  if (exInst.valid && !exInst.executed) {
+  if (exInst.valid && !exInst.squashed && !exInst.executed) {
 
     if (exInst.executionCycles > 0) {
       // This is a multi-cycle instruction still in progress - decrement counter and stall
@@ -308,13 +319,13 @@ Instruction Pipeline::decode(bool prevStalled) {
   decodeStalled = false;
 
   // If current instruction is valid and not decoded, decode it
-  if (decInst.valid && !decInst.decoded) {
+  if (decInst.valid && !decInst.squashed && !decInst.decoded) {
     decInst = decodeInstruction(decInst);
     decInst.decoded = true;
   }
 
   // If current instruction is valid and operands are not yet read, check for stall conditions
-  if (decInst.valid && !decInst.operandsRead) {
+  if (decInst.valid && !decInst.squashed && !decInst.operandsRead) {
     // If read-registers are pending, stall
     if (isPending(decInst.rs1, decInst.isFloat) || isPending(decInst.rs2, decInst.isFloat)) {
       decodeStalled = true;
@@ -341,7 +352,10 @@ Instruction Pipeline::decode(bool prevStalled) {
   }
 
   // If no stall exists, update dependencies, return decoded instruction, and update decInst
-  addDest(getDestReg(decInst), decInst.isFloat);
+  if (decInst.valid && !decInst.squashed) {
+    addDest(getDestReg(decInst), decInst.isFloat);
+    decInst.dependencyTracked = (getDestReg(decInst) != 0);
+  }
   Instruction oldInst = decInst;
   decInst = incoming;
   return oldInst;
@@ -391,7 +405,7 @@ Instruction Pipeline::fetch(bool prevStalled) {
   }
 
   // Set inFlight if necessary
-  if (!pipelineEnabled && fetInst.valid) {
+  if (!pipelineEnabled && fetInst.valid && !fetInst.squashed) {
     inFlight = true;
   }
 
@@ -434,9 +448,19 @@ bool Pipeline::isPending(uint8_t reg, bool isFloat) const {
 // Called by Execute when a branch is determined to be taken.
 // Squashes the instructions currently in Fetch and Decode, then updates PC
 void Pipeline::squashAndRedirect(uint32_t targetAddress) {
-
-  fetInst.valid = false;
-  decInst.valid = false;
+  if (fetInst.dependencyTracked) {
+    removeDest(getDestReg(fetInst), fetInst.isFloat);
+  }
+  fetInst.dependencyTracked = false;
+  fetInst.squashed = true; // Mark as squashed for UI
+  fetInst.valid = false;  // Mark as invalid to prevent any side effects
+  
+  if (decInst.dependencyTracked) {
+    removeDest(getDestReg(decInst), decInst.isFloat);
+  }
+  decInst.dependencyTracked = false;
+  decInst.squashed = true; // Mark as squashed for UI 
+  decInst.valid = false;  // Mark as invalid to prevent any side effects
 
   regs->writePC(static_cast<int32_t>(targetAddress));
 }

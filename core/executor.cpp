@@ -2,6 +2,9 @@
 #include <cstring>
 #include <iostream>
 #include <climits>
+#include <cmath>
+#include <limits>
+#include <cfloat>
 
 // Bit conversion helpers
 static float bitsToFloat(int32_t bits) {
@@ -350,7 +353,41 @@ Instruction executeInstruction(Instruction inst) {
 
     // Branch
     case InstructionType::BRANCH:
-      std::cerr << "executeInstruction: BRANCH not yet implemented\n";
+      switch (static_cast<BranchFunct3>(inst.funct3)) {
+        case BranchFunct3::BEQ:
+          inst.branchTaken = (inst.rs1_value == inst.rs2_value);
+          break;
+
+        case BranchFunct3::BNEQ:
+          inst.branchTaken = (inst.rs1_value != inst.rs2_value);
+          break;
+
+        case BranchFunct3::BLT:
+          inst.branchTaken = (inst.rs1_value < inst.rs2_value);
+          break;
+
+        case BranchFunct3::BGT:
+          inst.branchTaken = (inst.rs1_value > inst.rs2_value);
+          break;
+
+        case BranchFunct3::BLE:
+          inst.branchTaken = (inst.rs1_value <= inst.rs2_value);
+          break;
+
+        case BranchFunct3::BGE:
+          inst.branchTaken = (inst.rs1_value >= inst.rs2_value);
+          break;
+
+        default:
+          std::cerr << "executeInstruction: unknown BRANCH funct3 "
+                    << (int)inst.funct3 << "\n";
+          break;
+      }
+
+      if (inst.branchTaken) {
+        inst.branchTarget =
+            static_cast<uint32_t>(static_cast<int32_t>(inst.pc) + inst.immediate);
+      }
       break;
 
     // Push/Pop

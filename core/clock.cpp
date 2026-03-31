@@ -30,6 +30,10 @@ void Clock::pause() {
   haltReason = HaltReason::USER_PAUSE;
 }
 
+void Clock::resume() {
+  clearHalt();
+}
+
 // Runs one pipeline cycle and updates counters and halt conditions.
 void Clock::tick() {
   
@@ -101,6 +105,14 @@ void Clock::checkHaltConditions() {
     halted = true;
     haltReason = HaltReason::CYCLE_TARGET;
     cycleTarget = -1;
+    return;
+  }
+
+  // Instruction target reached
+  if (instrTarget != -1 && static_cast<int32_t>(instrCount) >= instrTarget) {
+    halted = true;
+    haltReason = HaltReason::INSTR_TARGET;
+    instrTarget = -1;
   }
 }
 
@@ -154,6 +166,3 @@ void Clock::onInstructionRetired() {
   instrCount++;
 }
 
-// TODO: Check for halts (HLT or breakpoint) on instruction retired
-// Potentially have fetch call onBreakpoint() at breakpoint fetch, but definitely check HLT here
-// Get instruction from pipeline tick() call and store for UI

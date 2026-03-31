@@ -40,6 +40,9 @@ public:
   // Pause immediately at the end of the current or next cycle.
   void pause();
 
+  // Clear a prior halted state so execution can continue.
+  void resume();
+
   // Breakpoints
   void addBreakpoint    (uint32_t address);
   void removeBreakpoint (uint32_t address);
