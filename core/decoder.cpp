@@ -132,7 +132,16 @@ Instruction decodeInstruction(Instruction inst) {
       // Type | funct3 | Unused | rs1
       // 31-29   28-26   25-5    4-0
       inst.funct3 = (raw >> 26) & 0x7;
-      inst.rs1    = (raw >>  0) & 0x1F;
+
+      if (inst.funct3 == 0) { // PUSH
+        inst.rs1 = (raw >>  0) & 0x1F;
+      } 
+      if (inst.funct3 == 1) { // POP
+        inst.rd = (raw >>  0) & 0x1F;
+      }
+      // Treat rs2 and rd as 2 (stack pointer) for both push and pop, to simplify execute and memory stages.
+      inst.rs2 = 2;
+
       inst.writeSource = WriteSource::PUSH_POP;
 
       // Validity check for funct3

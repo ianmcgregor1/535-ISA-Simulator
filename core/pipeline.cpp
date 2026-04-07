@@ -7,8 +7,6 @@
 #include <iostream>
 #include "executor.h"
 
-// TODO - Need breakpoint support
-
 /*
 * Helper functions
 */
@@ -34,11 +32,6 @@ static uint8_t getDestReg(const Instruction& inst) {
       if (inst.funct3 == static_cast<uint8_t>(LoadStoreFunct3::STORE))
         return 0;   // Store has no destination — write to x0 is discarded
       return inst.rs2;   // Load: rs2 = *rs1
-
-    case InstructionType::PUSH_POP:
-      if (inst.funct3 == static_cast<uint8_t>(PushPopFunct3::PUSH))
-        return 0;   // Push has no destination
-      return inst.rs1;   // Pop: rs1 = *sp
 
     default:
       return inst.rd;
@@ -123,7 +116,7 @@ Instruction Pipeline::writeback() {
   // Writeback is never stalled, but set here for consistency
   writebackStalled = false;
 
-  // Get distination register
+  // Get destination register
   uint8_t dest = getDestReg(wbInst);
 
   // Process current instruction
@@ -132,6 +125,21 @@ Instruction Pipeline::writeback() {
     // Notify clock on halt
     if (wbInst.type == InstructionType::MISC && wbInst.opcode == static_cast<uint8_t>(MiscOpcode::HLT)) {
       clock->onHalt();
+    }
+    // Update stack pointer on Push/Pop instructions
+    else if (wbInst.type == InstructionType::PUSH_POP) {
+      uint32_t spValue = static_cast<uint32_t>(regs->readInt(2)); // Current stack pointer value from register file
+
+      if (wbInst.funct3 == static_cast<uint8_t>(PushPopFunct3::PUSH)) {
+        // Decrement sp by 1 (grows downwards)
+        int32_t newSP = static_cast<int32_t>(spValue - 1);
+        regs->writeInt(2, newSP, wbInst.writeSource);
+      }
+      else {
+        // Increment sp by 1 (shrinks upwards)
+        int32_t newSP = static_cast<int32_t>(spValue + 1);
+        regs->writeInt(2, newSP, wbInst.writeSource);
+      }
     }
 
     /* Writeback */
@@ -153,6 +161,12 @@ Instruction Pipeline::writeback() {
   // Instruction out of pipeline, update accordingly
   if (wbInst.dependencyTracked) {
     removeDest(dest, wbInst.isFloat);
+
+    // Push/Pop instructions need to remove stack pointer
+    if (wbInst.type == InstructionType::PUSH_POP) {
+      addDest(2, false); // Also track x2 (stack pointer) as destination
+    }
+    
     wbInst.dependencyTracked = false;
   }
   wbInst.complete = true;
@@ -217,37 +231,35 @@ Instruction Pipeline::memory(bool prevStalled) {
         }
         break;
       }
-      /* Push/Pop still TODO, this is not tested
+
       case InstructionType::PUSH_POP: {
 
-        if (memInst.funct3 == static_cast<uint8_t>(PushPopFunct3::POP)) {
-          // POP - load from stack pointer address
-          // sp value was read into rs1_value by decode (x2 = sp)
-          uint32_t spAddr = static_cast<uint32_t>(memInst.rs1_value);
-          MemoryResponse r = cache->loadWord(spAddr, AccessID::EXECUTE);
+        if (memInst.funct3 == static_cast<uint8_t>(PushPopFunct3::PUSH)) {
+          // Store rs1_value at sp, decrement sp by 1
+          uint32_t pushData = static_cast<uint32_t>(memInst.rs1_value);
+          MemoryResponse r  = cache->storeWord(memInst.memAddress, pushData, AccessID::MEMORY);
+
+          if (r.status == MemoryResponse::Status::WAIT) {
+            memoryStalled = true;
+          } else {
+            memInst.memoryAccessed = true;
+            memoryStalled = false;
+          }
+        }
+        else {
+          // POP - load from the current sp address into result
+          MemoryResponse r = cache->loadWord(memInst.memAddress, AccessID::MEMORY);
 
           if (r.status == MemoryResponse::Status::WAIT) {
             memoryStalled = true;
           } else {
             memInst.result = static_cast<int32_t>(r.word);
-            memInst.complete = true;
-          }
-        }
-        else {
-          // PUSH - store rs1_value to stack pointer address
-          uint32_t spAddr    = static_cast<uint32_t>(memInst.rs1_value);
-          uint32_t pushData  = static_cast<uint32_t>(memInst.rs2_value);
-          MemoryResponse r   = cache->storeWord(spAddr, pushData, AccessID::EXECUTE);
-
-          if (r.status == MemoryResponse::Status::WAIT) {
-            memoryStalled = true;
-          } else {
-            memInst.complete = true;
+            memInst.memoryAccessed = true;
+            memoryStalled = false;
           }
         }
         break;
       }
-      */
 
       default: // All other instruction types have no memory work, mark as done
         memInst.memoryAccessed = true;
@@ -292,6 +304,10 @@ Instruction Pipeline::execute(bool prevStalled) {
 
       // Redirect PC if necessary
       if (exInst.branchTaken) {
+        // If RET, get return address from register
+        if (exInst.type == InstructionType::MISC && exInst.opcode == static_cast<uint8_t>(MiscOpcode::RET)) {
+          exInst.branchTarget = static_cast<uint32_t>(regs->readInt(3));
+        }
         squashAndRedirect(exInst.branchTarget);
       }
     }
@@ -355,6 +371,11 @@ Instruction Pipeline::decode(bool prevStalled) {
   if (decInst.valid && !decInst.squashed) {
     addDest(getDestReg(decInst), decInst.isFloat);
     decInst.dependencyTracked = (getDestReg(decInst) != 0);
+
+    // PUSH/POP instructions also need to track the stack pointer (x2)
+    if (decInst.type == InstructionType::PUSH_POP) {
+      addDest(2, false); // Also track x2 (stack pointer) as destination
+    }
   }
   Instruction oldInst = decInst;
   decInst = incoming;
@@ -413,8 +434,6 @@ Instruction Pipeline::fetch(bool prevStalled) {
   Instruction oldInst = fetInst;
   fetInst = Instruction();
   return oldInst;  
-
-  // TODO: Breakpoints
 }
 
 /*
