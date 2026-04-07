@@ -129,6 +129,7 @@ Instruction executeInstruction(Instruction inst) {
               if (b == 0.0f) {
                 inst.floatCC = FloatConditionCode::DIVIDE_BY_ZERO;
                 inst.fresult = a >= 0.0f ? std::numeric_limits<float>::infinity() : -std::numeric_limits<float>::infinity();
+                inst.executed = true;
                 return inst;
               }
               else {
@@ -141,7 +142,7 @@ Instruction executeInstruction(Instruction inst) {
               break;
           }
           
-          setFloatCC(inst, r);
+          setFloatCC(inst, inst.fresult);
           break;
         }
 
@@ -336,7 +337,6 @@ Instruction executeInstruction(Instruction inst) {
     // Load/Store
     // Compute memory address only, actual access done later
     case InstructionType::LOAD_STORE:
-      // Address is the value in rs1
       inst.memAddress = static_cast<uint32_t>(inst.rs1_value);
       break;
 
@@ -347,10 +347,7 @@ Instruction executeInstruction(Instruction inst) {
       inst.branchTaken  = true;
       inst.branchTarget = static_cast<uint32_t>(static_cast<int32_t>(inst.pc) + inst.immediate);
       break;
-
-
-    // TODO - Resume from here
-
+ 
     // Branch
     case InstructionType::BRANCH:
       switch (static_cast<BranchFunct3>(inst.funct3)) {
@@ -392,12 +389,41 @@ Instruction executeInstruction(Instruction inst) {
 
     // Push/Pop
     case InstructionType::PUSH_POP:
-      std::cerr << "executeInstruction: PUSH_POP not yet implemented\n";
+      switch (static_cast<PushPopFunct3>(inst.funct3)) {
+ 
+        case PushPopFunct3::PUSH:
+          inst.memAddress = static_cast<uint32_t>(inst.rs2_value - 1); // address to store to
+          inst.writeSource = WriteSource::PUSH_POP;
+          break;
+ 
+        case PushPopFunct3::POP:
+          inst.memAddress = static_cast<uint32_t>(inst.rs2_value); // address to load from
+          inst.writeSource = WriteSource::PUSH_POP;
+          break;
+ 
+        default:
+          std::cerr << "executeInstruction: unknown PUSH_POP funct3 "
+                    << (int)inst.funct3 << "\n";
+          break;
+      }
       break;
 
     // Misc
     case InstructionType::MISC:
-      // HLT and RET are handled by Pipeline, so nothing needed here
+      switch (static_cast<MiscOpcode>(inst.opcode)) {
+        case MiscOpcode::HLT:
+          // Nothing to do, handled by Pipeline
+          break;
+ 
+        case MiscOpcode::RET:
+          inst.branchTaken  = true;
+          break;
+ 
+        default:
+          std::cerr << "executeInstruction: unknown MISC opcode "
+                    << (int)inst.opcode << "\n";
+          break;
+      }
       break;
 
     default:
