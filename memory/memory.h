@@ -144,6 +144,8 @@ public:
   // Reset all data and metadata to zero/invalid
   void reset();
 
+  // Cancel in-flight fetch request
+  void cancelFetch();
 
   // Modifying configuration
 

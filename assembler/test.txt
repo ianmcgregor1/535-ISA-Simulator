@@ -1,0 +1,52 @@
+# ============================================================
+# GIA Assembly — Array Initialize & Increment
+# ------------------------------------------------------------
+# Allocates a 5-element integer array starting at address 50.
+# Phase 1: fills every element with the value 1.
+# Phase 2: adds 4 to every element, bringing each to 5.
+# Then halts.
+#
+# Register convention:
+#   x4  — array base address (50)
+#   x5  — loop index
+#   x6  — array length (5), loop upper bound
+#   x7  — current element address (x4 + x5)
+#   x8  — scratch: holds a loaded element during increment
+#   x9  — working value (init=1 in phase 1, increment=4 in phase 2)
+# ============================================================
+
+# ── Constant data: store array length and init value as named vars ──────────
+.loc 50
+arr_base  .dataInt 0    # array[0]  — 5 contiguous words
+          .dataInt 0    # array[1]
+          .dataInt 0    # array[2]
+          .dataInt 0    # array[3]
+          .dataInt 0    # array[4]
+
+# ── Code section ─────────────────────────────────────────────────────────────
+.loc 0
+
+# Setup: load constants into working registers
+          ADDI x4 x0 50   # x4 = base address of the array
+          ADDI x5 x0 0    # x5 = index = 0
+          ADDI x6 x0 5    # x6 = array length = 5
+          ADDI x9 x0 1    # x9 = initial fill value = 1
+
+# ── Phase 1: write 1 into every array slot ───────────────────────────────────
+init_loop ADD  x7 x4 x5   # x7 = base + index  →  address of current element
+          SW   x7 x9       # mem[x7] = 1
+          ADDI x5 x5 1     # index++
+          BLT  x5 x6 init_loop   # if index < 5, loop back
+
+# ── Phase 2: load each element, add 4, store it back  (1 → 5) ───────────────
+          ADDI x5 x0 0    # reset index to 0
+          ADDI x9 x0 4    # x9 = increment amount (1 + 4 = 5)
+
+incr_loop ADD  x7 x4 x5   # x7 = base + index
+          LW   x8 x7       # x8 = mem[x7]
+          ADD  x8 x8 x9    # x8 += 4
+          SW   x7 x8       # mem[x7] = x8
+          ADDI x5 x5 1     # index++
+          BLT  x5 x6 incr_loop   # if index < 5, loop back
+
+          HLT               # all elements are now 5 — done

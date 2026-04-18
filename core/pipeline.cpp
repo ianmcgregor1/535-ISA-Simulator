@@ -482,6 +482,8 @@ void Pipeline::squashAndRedirect(uint32_t targetAddress) {
   fetInst.squashed = true; // Mark as squashed for UI
   fetInst.valid = false;  // Mark as invalid to prevent any side effects
   
+  cache->cancelFetch(); // Cancel any in-flight fetch request, since it will be squashed
+
   if (decInst.dependencyTracked) {
     removeDest(getDestReg(decInst), decInst.isFloat);
   }
