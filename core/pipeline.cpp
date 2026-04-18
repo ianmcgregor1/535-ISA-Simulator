@@ -348,8 +348,16 @@ Instruction Pipeline::decode(bool prevStalled) {
     } else {
       // No hazard - read values from register file
       if (decInst.isFloat) {
-        decInst.fs1_value = regs->readFloat(decInst.rs1);
-        decInst.fs2_value = regs->readFloat(decInst.rs2);
+        if (decInst.type == InstructionType::LOAD_STORE) {
+            // Memory address is always an integer
+            decInst.rs1_value = regs->readInt(decInst.rs1);
+            if (decInst.funct3 == static_cast<uint8_t>(LoadStoreFunct3::STORE)) {
+                decInst.fs2_value = regs->readFloat(decInst.rs2); // Read data to store
+            }
+        } else {
+            decInst.fs1_value = regs->readFloat(decInst.rs1);
+            decInst.fs2_value = regs->readFloat(decInst.rs2);
+        }
       }
       else {
         decInst.rs1_value = regs->readInt(decInst.rs1);
@@ -474,6 +482,8 @@ void Pipeline::squashAndRedirect(uint32_t targetAddress) {
   fetInst.squashed = true; // Mark as squashed for UI
   fetInst.valid = false;  // Mark as invalid to prevent any side effects
   
+  cache->cancelFetch(); // Cancel any in-flight fetch request, since it will be squashed
+
   if (decInst.dependencyTracked) {
     removeDest(getDestReg(decInst), decInst.isFloat);
   }

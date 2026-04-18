@@ -552,6 +552,17 @@ void Memory::writeWord(uint32_t address, uint32_t value) {
   data[lineIndex][wordOffset] = value;
 }
 
+// Cancel an in-flight fetch request
+void Memory::cancelFetch() {
+  // If ID is fetch, cancel. If ID is L1, then it is a fetch because it was called by L1 during a fetch
+  if (busy && (currentID == AccessID::FETCH || currentID == AccessID::L1)) {
+    finishOperation();
+    // Also cancel if DRAM is mid-fetch on behalf of this request
+    if (nextLevel != nullptr)
+        nextLevel->cancelFetch();
+  }
+}
+
 // Preliminary check - sets business parameters accordingly
 // Returns True if operation can proceed, False if caller should wait
 bool Memory::checkAndSetBusy(AccessID id, MemOp op, uint32_t address) {
