@@ -2,6 +2,7 @@
 
 #include <QMainWindow>
 #include <QTableWidget>
+#include <QListWidget>
 #include <QComboBox>
 #include <QCheckBox>
 #include <QPushButton>
@@ -33,7 +34,6 @@ private slots:
     void onLoadFile();
     void onStep();
     void onRunAll();       // toggles between RUN ALL and STOP
-    void onRunToBP();      // run until the breakpoint address is hit
     void onReset();
     void onAssocChanged(int index);
     void onPipelineToggled(bool checked);
@@ -41,6 +41,9 @@ private slots:
     void onDramPagePrev();
     void onDramPageNext();
     void onRunFinished();  // called when the worker thread completes
+    void onAddBP();        // adds m_bpSpin value to clock breakpoints
+    void onClearBPs();     // calls clock->clearBreakpoints(), clears list
+    void onRemoveBP(int row); // removes a single BP by row index
 
 signals:
     void runFinished();    // emitted by worker thread back to GUI thread
@@ -90,13 +93,16 @@ private:
     QPushButton*  m_loadBtn       = nullptr;
     QPushButton*  m_stepBtn       = nullptr;
     QPushButton*  m_runBtn        = nullptr;
-    QPushButton*  m_bpBtn         = nullptr;   // Run to Breakpoint
     QPushButton*  m_resetBtn      = nullptr;
     QComboBox*    m_assocCombo    = nullptr;
     QCheckBox*    m_pipelineCheck = nullptr;
     QCheckBox*    m_cacheCheck    = nullptr;
     QComboBox*    m_stepModeCombo = nullptr;
-    QSpinBox*     m_bpSpin        = nullptr;   // breakpoint address input
+    // Breakpoint panel (right of step mode combo)
+    QListWidget*  m_bpList        = nullptr;   // running list of active BPs
+    QSpinBox*     m_bpSpin        = nullptr;   // address input
+    QPushButton*  m_addBpBtn      = nullptr;   // add BP to list + clock
+    QPushButton*  m_clearBpBtn    = nullptr;   // clear all BPs
     QLabel*       m_fileLabel     = nullptr;
     QLabel*       m_cycleLabel    = nullptr;
     QLabel*       m_pcLabel       = nullptr;

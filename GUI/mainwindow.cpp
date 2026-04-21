@@ -6,6 +6,7 @@
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QCheckBox>
+#include <QListWidget>
 #include <QThread>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -249,6 +250,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     buildToolbar();
     rootLayout->addWidget(findChild<QWidget*>("toolbar"));
+    // Double-click a BP in the list to remove it individually
+    connect(m_bpList, &QListWidget::itemDoubleClicked,
+            this, [this](QListWidgetItem* item) {
+                onRemoveBP(m_bpList->row(item));
+            });
 
     m_tabs = new QTabWidget(this);
     rootLayout->addWidget(m_tabs, 1);
@@ -289,13 +295,19 @@ MainWindow::~MainWindow() {
 void MainWindow::buildToolbar() {
     QWidget* bar = new QWidget(this);
     bar->setObjectName("toolbar");
-    bar->setFixedHeight(48);
-    QHBoxLayout* layout = new QHBoxLayout(bar);
+    bar->setFixedHeight(96);   // two rows
+    QVBoxLayout* barLayout = new QVBoxLayout(bar);
+    barLayout->setContentsMargins(0, 2, 0, 2);
+    barLayout->setSpacing(4);
+
+    // ── Row 1: all existing controls unchanged ────────────────
+    QWidget* row1 = new QWidget(bar);
+    QHBoxLayout* layout = new QHBoxLayout(row1);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(8);
 
-    m_loadBtn  = new QPushButton("LOAD FILE", bar);
-    m_fileLabel = new QLabel("No file loaded", bar);
+    m_loadBtn  = new QPushButton("LOAD FILE", row1);
+    m_fileLabel = new QLabel("No file loaded", row1);
     m_fileLabel->setObjectName("fileLabel");
     m_fileLabel->setMinimumWidth(80);
     m_fileLabel->setMaximumWidth(150);
@@ -303,96 +315,72 @@ void MainWindow::buildToolbar() {
     m_fileLabel->setTextFormat(Qt::PlainText);
     m_fileLabel->setWordWrap(false);
 
-    m_stepBtn  = new QPushButton("STEP", bar);
-    m_stepBtn->setObjectName("stepBtn");
-    m_runBtn   = new QPushButton("RUN ALL", bar);
-    m_runBtn->setObjectName("runBtn");
-    m_bpBtn    = new QPushButton("RUN TO BP", bar);
-    m_bpBtn->setObjectName("bpBtn");
-    m_bpBtn->setToolTip("Run until the breakpoint address in the spinner is reached");
-    m_resetBtn = new QPushButton("RESET", bar);
-    m_resetBtn->setObjectName("resetBtn");
+    m_stepBtn  = new QPushButton("STEP",    row1); m_stepBtn->setObjectName("stepBtn");
+    m_runBtn   = new QPushButton("RUN ALL", row1); m_runBtn->setObjectName("runBtn");
+    m_resetBtn = new QPushButton("RESET",   row1); m_resetBtn->setObjectName("resetBtn");
 
-    QLabel* assocLabel = new QLabel("N-Way:", bar);
+    QLabel* assocLabel = new QLabel("N-Way:", row1);
     assocLabel->setStyleSheet("color:#8b949e; font-size:11px;");
-    m_assocCombo = new QComboBox(bar);
+    m_assocCombo = new QComboBox(row1);
     m_assocCombo->addItems({"1 (Direct)", "2-Way", "4-Way", "8-Way", "16-Way"});
     m_assocCombo->setCurrentIndex(2);
     m_assocCombo->setFixedWidth(110);
 
-    QWidget* checkStack = new QWidget(bar);
-    checkStack->setFixedHeight(44);
+    QWidget* checkStack = new QWidget(row1);
+    checkStack->setFixedHeight(40);
     QVBoxLayout* checkLayout = new QVBoxLayout(checkStack);
     checkLayout->setContentsMargins(0, 0, 0, 0);
     checkLayout->setSpacing(2);
-
     m_pipelineCheck = new QCheckBox("✓ Pipeline", checkStack);
     m_pipelineCheck->setChecked(true);
-    m_pipelineCheck->setToolTip("Uncheck to bypass the pipeline — instructions retire immediately");
-
+    m_pipelineCheck->setToolTip("Uncheck to bypass the pipeline");
     m_cacheCheck = new QCheckBox("✓ Cache", checkStack);
     m_cacheCheck->setChecked(true);
-    m_cacheCheck->setToolTip("Uncheck to bypass the L1 cache — all accesses go straight to DRAM");
-
+    m_cacheCheck->setToolTip("Uncheck to bypass the L1 cache");
     checkLayout->addWidget(m_pipelineCheck);
     checkLayout->addWidget(m_cacheCheck);
 
-    QLabel* stepModeLabel = new QLabel("Step By:", bar);
+    QLabel* stepModeLabel = new QLabel("Step By:", row1);
     stepModeLabel->setStyleSheet("color:#8b949e; font-size:11px;");
-    m_stepModeCombo = new QComboBox(bar);
+    m_stepModeCombo = new QComboBox(row1);
     m_stepModeCombo->addItems({"Cycle", "Instruction"});
     m_stepModeCombo->setCurrentIndex(0);
     m_stepModeCombo->setFixedWidth(110);
     m_stepModeCombo->setToolTip("STEP advances by the selected unit");
 
-    // Breakpoint address input — sits where Batch used to be.
-    // The user types a word address here and presses RUN TO BP.
-    QLabel* bpLabel = new QLabel("Add BP:", bar);
-    bpLabel->setStyleSheet("color:#8b949e; font-size:11px;");
-    m_bpSpin = new QSpinBox(bar);
-    m_bpSpin->setRange(0, static_cast<int>(DRAM_LINES * WORDS_PER_LINE - 1));
-    m_bpSpin->setValue(0);
-    m_bpSpin->setFixedWidth(80);
-    m_bpSpin->setToolTip("Word address at which RUN TO BP will halt");
-
-    m_progressBar = new QProgressBar(bar);
+    m_progressBar = new QProgressBar(row1);
     m_progressBar->setRange(0, 100);
     m_progressBar->setFixedWidth(80);
     m_progressBar->setVisible(false);
 
-    m_cycleLabel = new QLabel("CYCLES: 0", bar);
-    m_cycleLabel->setObjectName("cycleLabel");
-    m_cycleLabel->setFixedWidth(100);
-    m_cycleLabel->setAlignment(Qt::AlignCenter);
-
-    m_pcLabel = new QLabel("PC: 0", bar);
+    m_pcLabel = new QLabel("PC: 0", row1);
     m_pcLabel->setObjectName("pcLabel");
     m_pcLabel->setFixedWidth(85);
     m_pcLabel->setAlignment(Qt::AlignCenter);
     m_pcLabel->setStyleSheet(
-        "color: #ffa657;"
-        "font-size: 11px;"
-        "font-weight: bold;"
-        "padding: 4px 6px;"
-        "background: #161b22;"
-        "border: 1px solid #21262d;"
-        "border-radius: 4px;");
+        "color: #ffa657; font-size: 11px; font-weight: bold;"
+        "padding: 4px 6px; background: #161b22;"
+        "border: 1px solid #21262d; border-radius: 4px;");
+
+    m_cycleLabel = new QLabel("CYCLES: 0", row1);
+    m_cycleLabel->setObjectName("cycleLabel");
+    m_cycleLabel->setFixedWidth(100);
+    m_cycleLabel->setAlignment(Qt::AlignCenter);
 
     layout->addWidget(m_loadBtn);
     layout->addWidget(m_fileLabel);
-    layout->addSpacing(8);
+    layout->addSpacing(4);
 
-    QFrame* sep1 = new QFrame(bar);
+    QFrame* sep1 = new QFrame(row1);
     sep1->setFrameShape(QFrame::VLine);
     sep1->setStyleSheet("color:#30363d;");
     layout->addWidget(sep1);
 
     layout->addWidget(m_stepBtn);
     layout->addWidget(m_runBtn);
-    layout->addWidget(m_bpBtn);
     layout->addWidget(m_resetBtn);
 
-    QFrame* sep2 = new QFrame(bar);
+    QFrame* sep2 = new QFrame(row1);
     sep2->setFrameShape(QFrame::VLine);
     sep2->setStyleSheet("color:#30363d;");
     layout->addWidget(sep2);
@@ -400,33 +388,87 @@ void MainWindow::buildToolbar() {
     layout->addWidget(assocLabel);
     layout->addWidget(m_assocCombo);
 
-    QFrame* sep3 = new QFrame(bar);
+    QFrame* sep3 = new QFrame(row1);
     sep3->setFrameShape(QFrame::VLine);
     sep3->setStyleSheet("color:#30363d;");
     layout->addWidget(sep3);
 
     layout->addWidget(checkStack);
 
-    QFrame* sep4 = new QFrame(bar);
+    QFrame* sep4 = new QFrame(row1);
     sep4->setFrameShape(QFrame::VLine);
     sep4->setStyleSheet("color:#30363d;");
     layout->addWidget(sep4);
 
     layout->addWidget(stepModeLabel);
     layout->addWidget(m_stepModeCombo);
-    layout->addWidget(bpLabel);
-    layout->addWidget(m_bpSpin);
 
     layout->addStretch();
     layout->addWidget(m_progressBar);
     layout->addWidget(m_pcLabel);
     layout->addWidget(m_cycleLabel);
 
-    connect(m_loadBtn,  &QPushButton::clicked, this, &MainWindow::onLoadFile);
-    connect(m_stepBtn,  &QPushButton::clicked, this, &MainWindow::onStep);
-    connect(m_runBtn,   &QPushButton::clicked, this, &MainWindow::onRunAll);
-    connect(m_bpBtn,    &QPushButton::clicked, this, &MainWindow::onRunToBP);
-    connect(m_resetBtn, &QPushButton::clicked, this, &MainWindow::onReset);
+    // ── Row 2: breakpoint panel ───────────────────────────────
+    // Layout:  [BP list (scrollable)] [addr spinbox] [+ ADD BP] [CLEAR ALL]
+    // The list shows all active breakpoints; each row has a small
+    // remove button. ADD BP calls clock->addBreakpoint(). CLEAR ALL
+    // calls clock->clearBreakpoints() and empties the list.
+    QWidget* row2 = new QWidget(bar);
+    QHBoxLayout* bpLayout = new QHBoxLayout(row2);
+    bpLayout->setContentsMargins(0, 0, 0, 0);
+    bpLayout->setSpacing(6);
+
+    QLabel* bpSectionLabel = new QLabel("Breakpoints:", row2);
+    bpSectionLabel->setStyleSheet("color:#8b949e; font-size:11px;");
+    bpLayout->addWidget(bpSectionLabel);
+
+    // Compact scrollable list of active breakpoints
+    m_bpList = new QListWidget(row2);
+    m_bpList->setFixedHeight(36);
+    m_bpList->setFlow(QListWidget::LeftToRight);   // horizontal scroll
+    m_bpList->setWrapping(false);
+    m_bpList->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_bpList->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_bpList->setStyleSheet(
+        "QListWidget { background:#161b22; border:1px solid #21262d;"
+        "  border-radius:4px; color:#c9d1d9; font-size:11px; }"
+        "QListWidget::item { padding:2px 6px; border-right:1px solid #21262d; }"
+        "QListWidget::item:selected { background:#1f3a5f; }");
+    m_bpList->setToolTip("Active breakpoints — select one and press Remove, or Clear All");
+    bpLayout->addWidget(m_bpList, 1);   // takes available width
+
+    // Address spinbox
+    m_bpSpin = new QSpinBox(row2);
+    m_bpSpin->setRange(0, static_cast<int>(DRAM_LINES * WORDS_PER_LINE - 1));
+    m_bpSpin->setValue(0);
+    m_bpSpin->setFixedWidth(80);
+    m_bpSpin->setToolTip("Word address to add as a breakpoint");
+    bpLayout->addWidget(m_bpSpin);
+
+    // Add BP button
+    m_addBpBtn = new QPushButton("ADD BP", row2);
+    m_addBpBtn->setObjectName("bpBtn");
+    m_addBpBtn->setFixedWidth(80);
+    m_addBpBtn->setToolTip("Add this address to the breakpoint list");
+    bpLayout->addWidget(m_addBpBtn);
+
+    // Clear all button
+    m_clearBpBtn = new QPushButton("CLEAR", row2);
+    m_clearBpBtn->setObjectName("resetBtn");   // reuse red style
+    m_clearBpBtn->setFixedWidth(75);
+    m_clearBpBtn->setToolTip("Remove all breakpoints");
+    bpLayout->addWidget(m_clearBpBtn);
+
+    barLayout->addWidget(row1);
+    barLayout->addWidget(row2);
+
+    // ── Connections ───────────────────────────────────────────
+    connect(m_loadBtn,   &QPushButton::clicked, this, &MainWindow::onLoadFile);
+    connect(m_stepBtn,   &QPushButton::clicked, this, &MainWindow::onStep);
+    connect(m_runBtn,    &QPushButton::clicked, this, &MainWindow::onRunAll);
+    connect(m_resetBtn,  &QPushButton::clicked, this, &MainWindow::onReset);
+    connect(m_addBpBtn,  &QPushButton::clicked, this, &MainWindow::onAddBP);
+    connect(m_clearBpBtn,&QPushButton::clicked, this, &MainWindow::onClearBPs);
     connect(m_assocCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onAssocChanged);
     connect(m_pipelineCheck, &QCheckBox::toggled, this, &MainWindow::onPipelineToggled);
@@ -469,7 +511,7 @@ void MainWindow::buildRegisterAndPipelineTab() {
     intLayout->addWidget(m_intRegTable);
     intGroup->setLayout(intLayout);
 
-    QGroupBox* fltGroup = new QGroupBox("FLOAT REGISTERS");
+    QGroupBox* fltGroup = new QGroupBox("FLOAT POINT REGISTERS");
     QVBoxLayout* fltLayout = new QVBoxLayout(fltGroup);
     fltLayout->setContentsMargins(4, 12, 4, 4);
 
@@ -490,13 +532,13 @@ void MainWindow::buildRegisterAndPipelineTab() {
     regLayout->addWidget(fltGroup,  2);
 
     QGroupBox* pipeGroup = new QGroupBox(
-        "PIPELINE  — Fetch → Decode → Execute → Memory → Writeback");
+        "5-STAGE RISC PIPELINE");
     QVBoxLayout* pipeLayout = new QVBoxLayout(pipeGroup);
     pipeLayout->setContentsMargins(4, 12, 4, 4);
 
     m_pipelineTable = new QTableWidget(5, 5, pipeGroup);
     m_pipelineTable->setHorizontalHeaderLabels(
-        {"Stage", "Status", "PC", "Raw Word", "Info"});
+        {"Stage", "Status", "Info", "Raw Word", "PC"});
     m_pipelineTable->setAlternatingRowColors(false);
     m_pipelineTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_pipelineTable->verticalHeader()->setVisible(false);
@@ -559,6 +601,15 @@ void MainWindow::buildRegisterAndPipelineTab() {
     m_pipelineTable->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     pipeLayout->addWidget(m_pipelineTable);
     pipeGroup->setLayout(pipeLayout);
+    // Guarantee all 5 rows are always fully visible:
+    // 5 rows × 36px = 180
+    // + 26px  column header
+    // + 8px   QGroupBox margin-top (from stylesheet)
+    // + 4px   QGroupBox padding-top (from stylesheet)
+    // + 12px  pipeLayout top contentsMargin
+    // + 4px   pipeLayout bottom contentsMargin
+    // = 234px minimum to prevent the last row being clipped
+    pipeGroup->setMinimumHeight(262);
 
     outerLayout->addWidget(regRow,    2);
     outerLayout->addWidget(pipeGroup, 1);
@@ -653,11 +704,11 @@ void MainWindow::buildMemoryTab() {
     m_cacheTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_cacheTable->verticalHeader()->setVisible(false);
     m_cacheTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    m_cacheTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
-    m_cacheTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
+    m_cacheTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_cacheTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     m_cacheTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    m_cacheTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed);
-    m_cacheTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
+    m_cacheTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+    m_cacheTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Stretch);
     m_cacheTable->setColumnWidth(0, 38);
     m_cacheTable->setColumnWidth(1, 38);
     m_cacheTable->setColumnWidth(2, 42);
@@ -897,9 +948,9 @@ void MainWindow::refreshPipeline() {
 
         setP(0, name, QColor("#58a6ff"));
         setP(1, status, statusColor);
-        setP(2, present ? formatDecimal(inst.pc)   : "-", QColor("#79c0ff"));
-        setP(3, present ? formatWord(inst.raw)     : "-", QColor("#e6edf3"));
-        setP(4, present ? instructionSummary(inst) : "bubble", QColor("#8b949e"));
+        setP(2, present ? instructionSummary(inst) : "bubble", QColor("#8b949e"));
+        setP(3, present ? formatWord(inst.raw)      : "-",      QColor("#e6edf3"));
+        setP(4, present ? formatDecimal(inst.pc)    : "-",      QColor("#79c0ff"));
     };
 
     fillStage(0, stages[0], m_pipeline->getFetchInst(),     m_pipeline->isFetchStalled());
@@ -1012,8 +1063,10 @@ void MainWindow::enterRunningState() {
     if (m_stepBtn)       m_stepBtn->setEnabled(false);
     if (m_resetBtn)      m_resetBtn->setEnabled(false);
     if (m_loadBtn)       m_loadBtn->setEnabled(false);
-    if (m_bpBtn)         m_bpBtn->setEnabled(false);
+    if (m_addBpBtn)      m_addBpBtn->setEnabled(false);
+    if (m_clearBpBtn)    m_clearBpBtn->setEnabled(false);
     if (m_bpSpin)        m_bpSpin->setEnabled(false);
+    if (m_bpList)        m_bpList->setEnabled(false);
     if (m_assocCombo)    m_assocCombo->setEnabled(false);
     if (m_pipelineCheck) m_pipelineCheck->setEnabled(false);
     if (m_cacheCheck)    m_cacheCheck->setEnabled(false);
@@ -1030,10 +1083,12 @@ void MainWindow::exitRunningState() {
     // Re-enable all controls
     if (m_stepBtn)       m_stepBtn->setEnabled(true);
     if (m_runBtn)        m_runBtn->setEnabled(true);
-    if (m_bpBtn)         m_bpBtn->setEnabled(true);
-    if (m_bpSpin)        m_bpSpin->setEnabled(true);
     if (m_resetBtn)      m_resetBtn->setEnabled(true);
     if (m_loadBtn)       m_loadBtn->setEnabled(true);
+    if (m_addBpBtn)      m_addBpBtn->setEnabled(true);
+    if (m_clearBpBtn)    m_clearBpBtn->setEnabled(true);
+    if (m_bpSpin)        m_bpSpin->setEnabled(true);
+    if (m_bpList)        m_bpList->setEnabled(true);
     if (m_assocCombo)    m_assocCombo->setEnabled(m_cacheEnabled);
     if (m_pipelineCheck) m_pipelineCheck->setEnabled(true);
     if (m_cacheCheck)    m_cacheCheck->setEnabled(true);
@@ -1089,41 +1144,36 @@ void MainWindow::onDramPageNext() {
     refreshDram();
 }
 
-void MainWindow::onRunToBP() {
-    if (m_loadedFile.isEmpty()) {
-        QMessageBox::information(this, "No file", "Please load a .hex file first.");
-        return;
-    }
-    if (!m_clock || !m_pipeline) return;
-    if (m_running) return;   // already running; use STOP button instead
+void MainWindow::onAddBP() {
+    if (!m_clock) return;
+    uint32_t addr = static_cast<uint32_t>(m_bpSpin->value());
 
-    uint32_t bpAddr = static_cast<uint32_t>(m_bpSpin->value());
+    // Prevent duplicate entries in both the clock and the list
+    if (m_clock->isBreakpoint(addr)) return;
 
-    // Register the breakpoint with the clock.
-    // Clock::addBreakpoint() is idempotent — adding the same address
-    // twice is safe. We clear any prior breakpoints first so only
-    // one address is active at a time, matching the single-input UI.
+    m_clock->addBreakpoint(addr);
+
+    // Add a display row — shows the address. Clicking the row
+    // and pressing Remove will delete it via onRemoveBP().
+    // Display as plain decimal — shorter and matches the spinbox value directly
+    QString label = QString::number(addr);
+    QListWidgetItem* item = new QListWidgetItem(label, m_bpList);
+    item->setData(Qt::UserRole, addr);   // store raw address for removal
+    item->setForeground(QColor("#a5a0ff"));
+}
+
+void MainWindow::onClearBPs() {
+    if (!m_clock) return;
     m_clock->clearBreakpoints();
-    m_clock->addBreakpoint(bpAddr);
+    m_bpList->clear();
+}
 
-    // From here the run path is identical to RUN ALL — the clock's
-    // run() loop runs until Pipeline::fetch() calls clock->onBreakpoint()
-    // which sets halted=true, causing run() to exit naturally.
-    m_stopRequested.store(false);
-    applySimulationMode();
-    m_clock->resume();
-    enterRunningState();
-
-    m_workerThread = QThread::create([this]() {
-        m_clock->run();
-        emit runFinished();
-    });
-    connect(m_workerThread, &QThread::finished,
-            m_workerThread, &QObject::deleteLater);
-    connect(this, &MainWindow::runFinished,
-            this,  &MainWindow::onRunFinished,
-            Qt::QueuedConnection);
-    m_workerThread->start();
+void MainWindow::onRemoveBP(int row) {
+    if (!m_clock || row < 0 || row >= m_bpList->count()) return;
+    QListWidgetItem* item = m_bpList->item(row);
+    uint32_t addr = static_cast<uint32_t>(item->data(Qt::UserRole).toUInt());
+    m_clock->removeBreakpoint(addr);
+    delete m_bpList->takeItem(row);
 }
 
 // ─── Simulation helpers ───────────────────────────────────────
@@ -1201,8 +1251,9 @@ void MainWindow::resetSimulationState() {
     if (m_pipeline) m_pipeline->reset();
     if (m_clock) {
         m_clock->reset();
-        m_clock->clearBreakpoints();   // don't carry stale BPs across reset
+        m_clock->clearBreakpoints();
     }
+    if (m_bpList)   m_bpList->clear();   // sync visual list with clock state
     m_dramPage = 0;
     applySimulationMode();
 }
