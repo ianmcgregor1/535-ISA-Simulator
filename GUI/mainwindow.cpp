@@ -348,6 +348,14 @@ void MainWindow::buildToolbar() {
     m_stepModeCombo->setFixedWidth(110);
     m_stepModeCombo->setToolTip("STEP advances by the selected unit");
 
+    QLabel* batchLabel = new QLabel("Batch:", row1);
+    batchLabel->setStyleSheet("color:#8b949e; font-size:11px;");
+    m_batchSpin = new QSpinBox(row1);
+    m_batchSpin->setRange(1, 10000);
+    m_batchSpin->setValue(1);
+    m_batchSpin->setFixedWidth(70);
+    m_batchSpin->setToolTip("STEP advances by this many cycles or instructions");
+
     m_progressBar = new QProgressBar(row1);
     m_progressBar->setRange(0, 100);
     m_progressBar->setFixedWidth(80);
@@ -402,6 +410,8 @@ void MainWindow::buildToolbar() {
 
     layout->addWidget(stepModeLabel);
     layout->addWidget(m_stepModeCombo);
+    layout->addWidget(batchLabel);
+    layout->addWidget(m_batchSpin);
 
     layout->addStretch();
     layout->addWidget(m_progressBar);
@@ -467,6 +477,7 @@ void MainWindow::buildToolbar() {
     connect(m_stepBtn,   &QPushButton::clicked, this, &MainWindow::onStep);
     connect(m_runBtn,    &QPushButton::clicked, this, &MainWindow::onRunAll);
     connect(m_resetBtn,  &QPushButton::clicked, this, &MainWindow::onReset);
+    connect(m_batchSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &MainWindow::onBatchSizeChanged);
     connect(m_addBpBtn,  &QPushButton::clicked, this, &MainWindow::onAddBP);
     connect(m_clearBpBtn,&QPushButton::clicked, this, &MainWindow::onClearBPs);
     connect(m_assocCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -1144,6 +1155,10 @@ void MainWindow::onDramPageNext() {
     refreshDram();
 }
 
+void MainWindow::onBatchSizeChanged(int val) {
+    m_batchSize = val;
+}
+
 void MainWindow::onAddBP() {
     if (!m_clock) return;
     uint32_t addr = static_cast<uint32_t>(m_bpSpin->value());
@@ -1182,10 +1197,11 @@ void MainWindow::executeStep() {
     if (!m_clock || !m_pipeline) return;
     applySimulationMode();
     m_clock->resume();
-    if (m_stepMode == StepMode::INSTRUCTION)
-        m_clock->runInstructions(1);
-    else
-        m_clock->runCycles(1);
+    if (m_stepMode == StepMode::INSTRUCTION) {
+        m_clock->runInstructions(static_cast<uint32_t>(m_batchSize));
+    } else {
+        m_clock->runCycles(static_cast<uint32_t>(m_batchSize));
+    }
 }
 
 void MainWindow::rebuildMemoryHierarchy(uint32_t assoc) {

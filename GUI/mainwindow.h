@@ -40,6 +40,7 @@ private slots:
     void onCacheToggled(bool checked);
     void onDramPagePrev();
     void onDramPageNext();
+    void onBatchSizeChanged(int val);
     void onRunFinished();  // called when the worker thread completes
     void onAddBP();        // adds m_bpSpin value to clock breakpoints
     void onClearBPs();     // calls clock->clearBreakpoints(), clears list
@@ -98,6 +99,7 @@ private:
     QCheckBox*    m_pipelineCheck = nullptr;
     QCheckBox*    m_cacheCheck    = nullptr;
     QComboBox*    m_stepModeCombo = nullptr;
+    QSpinBox*     m_batchSpin     = nullptr;
     // Breakpoint panel (right of step mode combo)
     QListWidget*  m_bpList        = nullptr;   // running list of active BPs
     QSpinBox*     m_bpSpin        = nullptr;   // address input
@@ -130,6 +132,7 @@ private:
     Pipeline*     m_pipeline = nullptr;
     Clock*        m_clock    = nullptr;
 
+    int      m_batchSize       = 1;    // refresh every N instructions or cycles
     int      m_assoc           = 4;
     uint32_t m_dramPage        = 0;
     QString  m_loadedFile;
