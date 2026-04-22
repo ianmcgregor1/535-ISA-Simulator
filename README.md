@@ -8,12 +8,14 @@ The specifics of this ISA, and the proposal for the simulator as a whole, are co
 The project features the following components
 - A five-stage F/D/E/M/W pipeline
 - A clock to drive the pipeline
-- A memory object to support reads/writes
+- A memory object to support reads/writes for cache and DRAM
 - A write-through, no-allocate, n-way associative cache
 - A register file with integer and floating-point registers
 - Capability to upload 32-bit instructions to memory to be executed
+- A Python assembler to generate .hex programs from .txt assembly code
+- Breakpoint support for mid-execution halting
 - A QT GUI to allow visualization of all above components
-- A set of benchmark applications to test different parts of the project
+- A set of benchmark applications to test different aspects of the project
 
 ## Benchmarks
 
