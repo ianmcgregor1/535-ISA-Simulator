@@ -1,20 +1,3 @@
-# ============================================================
-# GIA Assembly — Array Initialize & Increment
-# ------------------------------------------------------------
-# Allocates a 5-element integer array starting at address 50.
-# Phase 1: fills every element with the value 1.
-# Phase 2: adds 4 to every element, bringing each to 5.
-# Then halts.
-#
-# Register convention:
-#   x4  — array base address (50)
-#   x5  — loop index
-#   x6  — array length (5), loop upper bound
-#   x7  — current element address (x4 + x5)
-#   x8  — scratch: holds a loaded element during increment
-#   x9  — working value (init=1 in phase 1, increment=4 in phase 2)
-# ============================================================
-
 # ── Constant data: store array length and init value as named vars ──────────
 .loc 50
 arr_base  .dataInt 0    # array[0]  — 5 contiguous words
