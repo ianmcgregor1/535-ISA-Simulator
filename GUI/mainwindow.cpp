@@ -1218,6 +1218,8 @@ void MainWindow::rebuildMemoryHierarchy(uint32_t assoc) {
     m_clock    = new Clock();
     m_pipeline->setClock(m_clock);
     m_clock->setPipeline(m_pipeline);
+    // Initialize stack pointer (x2) to end of DRAM
+    m_regs->writeInt(2, m_dram->getNumLines() * DRAM_LINES_PER_PAGE - 4, WriteSource::SIDE_DOOR); 
     applySimulationMode();
     m_assoc = assoc;
 }
