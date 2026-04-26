@@ -155,6 +155,16 @@ void Clock::onHalt() {
   haltReason = HaltReason::HLT_INSTR;
 }
 
+void Clock::onCriticalError(int conditionCode, int isFloat) {
+  // Called by Execute when a critical error occurs (divide by zero)
+  // For now, just print an error message and halt immediately. In the future, could add more detailed error reporting in the UI.
+  std::cerr << "Clock::onCriticalError: critical error occurred during execution"
+            << "Condition code: " << conditionCode
+            << ", isFloat: " << isFloat << "\n";
+  halted = true;
+  haltReason = HaltReason::ERROR; // No specific halt reason for critical errors, so use USER_PAUSE
+}
+
 void Clock::onBreakpoint() {
   // Fetch encountered a breakpoint address - halt after this cycle
   halted = true;
