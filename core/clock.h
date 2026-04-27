@@ -10,6 +10,7 @@ class GUI; // To be used later
 enum class HaltReason {
   NONE,           // Not halted
   HLT_INSTR,      // HLT instruction reached Writeback
+  ERROR,          // Critical error occurred during execution (e.g. divide by zero)
   BREAKPOINT,     // PC matched a user-set breakpoint address
   CYCLE_TARGET,   // User-specified number of cycles completed
   INSTR_TARGET,   // User-specified number of instructions completed
@@ -53,6 +54,9 @@ public:
 
   // Called by Writeback when HLT reaches it
   virtual void onHalt();
+
+  // Called by Execute when a critical error occurs
+  virtual void onCriticalError(int conditionCode, int isFloat);
 
   // Called by Fetch when PC matches a breakpoint
   virtual void onBreakpoint();

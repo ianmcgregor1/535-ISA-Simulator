@@ -310,6 +310,17 @@ Instruction Pipeline::execute(bool prevStalled) {
         }
         squashAndRedirect(exInst.branchTarget);
       }
+
+      // Set condition code(s) if necessary
+      if (exInst.type == InstructionType::REG_REG || exInst.type == InstructionType::IMMEDIATE) {
+        regs->writeIntCC(exInst.intCC);
+        regs->writeFloatCC(exInst.floatCC);
+      }
+
+      // Notify clock if critical
+      if (exInst.intCC == IntConditionCode::DIVIDE_BY_ZERO || exInst.floatCC == FloatConditionCode::DIVIDE_BY_ZERO) {
+        clock->onCriticalError(1, exInst.isFloat); // 1 is the condition code for divide by zero
+      }
     }
   }
 

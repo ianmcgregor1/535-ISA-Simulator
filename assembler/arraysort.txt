@@ -1,0 +1,204 @@
+# exchange_sort.asm
+# Exchange (Bubble) Sort -- 128-element integer array
+#
+# Algorithm:
+#   for i = 0 to n-2:
+#       for j = 0 to (n-2-i):
+#           if arr[j] > arr[j+1]: swap
+#
+# Register map:
+#   x4  = array base address (200)
+#   x5  = n = 128
+#   x6  = i  (outer counter)
+#   x7  = j  (inner counter)
+#   x8  = &arr[j]
+#   x9  = arr[j]
+#   x10 = arr[j+1]
+#   x11 = n-1 = 127  (outer loop exit threshold)
+#   x12 = n-1-i      (inner loop exit threshold)
+#   x13 = temporary comparison result
+#   x14 = &arr[j+1]
+#
+# Memory layout (word addresses):
+#   Code  :   0 -  22
+#   Array : 200 - 327  (128 words, initialized descending 128..1)
+#
+# Recommended cache configuration:
+#   4-way associative, 8 sets -> 32 cache lines x 4 words = 128 words total.
+#   The 128-element data array alone occupies exactly 32 cache lines.
+#   Bubble sort performs 128*127/2 = 8128 comparisons, giving each cache line
+#   roughly 500 accesses on average -- far above the >=10 requirement.
+
+# -- Initialization --
+    ADDI x4 x0 200       # x4 = base address of array
+    ADDI x5 x0 128       # x5 = n = 128
+    SUBI x11 x5 1        # x11 = n-1 = 127  (outer loop limit)
+    ADDI x6 x0 0         # i = 0
+
+# -- Outer loop: for i = 0; i < n-1; i++ --
+outer
+    SGE x13 x6 x11       # x13 = (i >= n-1) ? 1 : 0
+    BNEQ x13 x0 done     # exit when i reaches n-1
+
+    SUB x12 x11 x6       # x12 = (n-1) - i  (inner loop limit)
+    ADDI x7 x0 0         # j = 0
+
+# -- Inner loop: for j = 0; j < n-1-i; j++ --
+inner
+    SGE x13 x7 x12       # x13 = (j >= n-1-i) ? 1 : 0
+    BNEQ x13 x0 next_i   # inner loop done; advance i
+
+    ADD x8 x4 x7         # x8  = base + j  =  &arr[j]
+    ADDI x14 x8 1        # x14 = base + j + 1  =  &arr[j+1]
+    LW x9 x8             # x9  = arr[j]
+    LW x10 x14           # x10 = arr[j+1]
+
+    SLE x13 x9 x10       # x13 = (arr[j] <= arr[j+1]) ? 1 : 0
+    BNEQ x13 x0 noswap   # already in order; skip swap
+
+    SW x8 x10            # arr[j]   <- old arr[j+1]
+    SW x14 x9            # arr[j+1] <- old arr[j]
+
+noswap
+    ADDI x7 x7 1         # j++
+    J x0 inner           # back to inner loop top
+
+next_i
+    ADDI x6 x6 1         # i++
+    J x0 outer           # back to outer loop top
+
+done
+    HLT
+
+# -- Data section --
+# 128 integers in descending order (worst case for a sort; maximises swaps
+# and therefore cache-line accesses across the full execution).
+.loc 200
+    .dataInt 128
+    .dataInt 127
+    .dataInt 126
+    .dataInt 125
+    .dataInt 124
+    .dataInt 123
+    .dataInt 122
+    .dataInt 121
+    .dataInt 120
+    .dataInt 119
+    .dataInt 118
+    .dataInt 117
+    .dataInt 116
+    .dataInt 115
+    .dataInt 114
+    .dataInt 113
+    .dataInt 112
+    .dataInt 111
+    .dataInt 110
+    .dataInt 109
+    .dataInt 108
+    .dataInt 107
+    .dataInt 106
+    .dataInt 105
+    .dataInt 104
+    .dataInt 103
+    .dataInt 102
+    .dataInt 101
+    .dataInt 100
+    .dataInt 99
+    .dataInt 98
+    .dataInt 97
+    .dataInt 96
+    .dataInt 95
+    .dataInt 94
+    .dataInt 93
+    .dataInt 92
+    .dataInt 91
+    .dataInt 90
+    .dataInt 89
+    .dataInt 88
+    .dataInt 87
+    .dataInt 86
+    .dataInt 85
+    .dataInt 84
+    .dataInt 83
+    .dataInt 82
+    .dataInt 81
+    .dataInt 80
+    .dataInt 79
+    .dataInt 78
+    .dataInt 77
+    .dataInt 76
+    .dataInt 75
+    .dataInt 74
+    .dataInt 73
+    .dataInt 72
+    .dataInt 71
+    .dataInt 70
+    .dataInt 69
+    .dataInt 68
+    .dataInt 67
+    .dataInt 66
+    .dataInt 65
+    .dataInt 64
+    .dataInt 63
+    .dataInt 62
+    .dataInt 61
+    .dataInt 60
+    .dataInt 59
+    .dataInt 58
+    .dataInt 57
+    .dataInt 56
+    .dataInt 55
+    .dataInt 54
+    .dataInt 53
+    .dataInt 52
+    .dataInt 51
+    .dataInt 50
+    .dataInt 49
+    .dataInt 48
+    .dataInt 47
+    .dataInt 46
+    .dataInt 45
+    .dataInt 44
+    .dataInt 43
+    .dataInt 42
+    .dataInt 41
+    .dataInt 40
+    .dataInt 39
+    .dataInt 38
+    .dataInt 37
+    .dataInt 36
+    .dataInt 35
+    .dataInt 34
+    .dataInt 33
+    .dataInt 32
+    .dataInt 31
+    .dataInt 30
+    .dataInt 29
+    .dataInt 28
+    .dataInt 27
+    .dataInt 26
+    .dataInt 25
+    .dataInt 24
+    .dataInt 23
+    .dataInt 22
+    .dataInt 21
+    .dataInt 20
+    .dataInt 19
+    .dataInt 18
+    .dataInt 17
+    .dataInt 16
+    .dataInt 15
+    .dataInt 14
+    .dataInt 13
+    .dataInt 12
+    .dataInt 11
+    .dataInt 10
+    .dataInt 9
+    .dataInt 8
+    .dataInt 7
+    .dataInt 6
+    .dataInt 5
+    .dataInt 4
+    .dataInt 3
+    .dataInt 2
+    .dataInt 1

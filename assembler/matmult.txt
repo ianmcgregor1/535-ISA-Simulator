@@ -1,0 +1,311 @@
+# matmul.asm
+# Integer Matrix Multiply: C = A × B  (8×8 matrices, row-major storage)
+#
+# Algorithm:
+#   for i in 0..7:
+#     for j in 0..7:
+#       acc = 0
+#       for k in 0..7:
+#         acc += A[i][k] * B[k][j]
+#       C[i][j] = acc
+#
+# Address arithmetic (word addresses, N=8):
+#   A[i][k] → A_base + i*8 + k   (i*8 computed via SLLI by 3)
+#   B[k][j] → B_base + k*8 + j
+#   C[i][j] → C_base + i*8 + j
+#
+# Register map:
+#   x4  = A base address (300)
+#   x5  = B base address (364)
+#   x6  = C base address (428)
+#   x8  = i  (row of C)
+#   x9  = j  (column of C)
+#   x10 = k  (inner product index)
+#   x11 = accumulator for C[i][j]
+#   x12 = scratch address register
+#   x13 = scratch product register
+#   x14 = A[i][k]
+#   x15 = B[k][j]
+#   x16 = i*8  (row byte-offset for A / C)
+#   x17 = k*8  (row byte-offset for B)
+#   x18 = address of C[i][j]
+#   x19 = loop condition result
+#
+# Memory layout (word addresses):
+#   Code     :   0 –  33
+#   Matrix A : 300 – 363  (8×8 = 64 words, A[i][j] = 8*i+j+1, values 1..64)
+#   Matrix B : 364 – 427  (8×8 = 64 words, B[i][j] = 8*i+j+1, values 1..64)
+#   Matrix C : 428 – 491  (8×8 = 64 words, initialised to 0)
+#
+# ─── Recommended cache configuration ────────────────────────────────────────
+# Same as exchange_sort: 4-way associative, 8 sets → 32 cache lines (128 words).
+# Three 8×8 matrices = 192 words = 48 cache lines — 1.5× the cache capacity.
+# The working set cannot fit; A, B, and C lines continuously evict each other.
+# Each element of A is accessed once per j (8 times per row of i, 8 rows) = 8
+# total accesses; each B element is accessed once per i (8 times per column of
+# j) = 8 total accesses. With 4 elements per cache line, every cache line
+# carries at least 32 accesses — well above the ≥10 requirement.
+
+# ── Initialization ───────────────────────────────────────────────────────────
+    ADDI x4 x0 300       # x4 = base of A
+    ADDI x5 x0 364       # x5 = base of B
+    ADDI x6 x0 428       # x6 = base of C
+    ADDI x8 x0 0         # i = 0
+
+# ── i loop (rows of C and A) ─────────────────────────────────────────────────
+iloop
+    SGEI x19 x8 8        # x19 = (i >= 8) ? 1 : 0
+    BNEQ x19 x0 done     # all rows computed; halt
+
+    ADDI x9 x0 0         # j = 0
+
+# ── j loop (columns of C and B) ──────────────────────────────────────────────
+jloop
+    SGEI x19 x9 8        # x19 = (j >= 8) ? 1 : 0
+    BNEQ x19 x0 next_i   # row i finished; advance i
+
+    ADDI x11 x0 0        # acc = 0
+    ADDI x10 x0 0        # k = 0
+
+# ── k loop (inner product) ───────────────────────────────────────────────────
+kloop
+    SGEI x19 x10 8       # x19 = (k >= 8) ? 1 : 0
+    BNEQ x19 x0 storec   # inner product done; store result
+
+    SLLI x16 x8 3        # x16 = i * 8
+    ADD x12 x4 x16       # x12 = A_base + i*8
+    ADD x12 x12 x10      # x12 = A_base + i*8 + k  →  &A[i][k]
+    LW x14 x12           # x14 = A[i][k]
+
+    SLLI x17 x10 3       # x17 = k * 8
+    ADD x12 x5 x17       # x12 = B_base + k*8
+    ADD x12 x12 x9       # x12 = B_base + k*8 + j  →  &B[k][j]
+    LW x15 x12           # x15 = B[k][j]
+
+    MUL x13 x14 x15      # x13 = A[i][k] * B[k][j]
+    ADD x11 x11 x13      # acc += product
+
+    ADDI x10 x10 1       # k++
+    J x0 kloop           # next k
+
+# ── Store C[i][j] and advance j ──────────────────────────────────────────────
+storec
+    SLLI x16 x8 3        # x16 = i * 8
+    ADD x18 x6 x16       # x18 = C_base + i*8
+    ADD x18 x18 x9       # x18 = C_base + i*8 + j  →  &C[i][j]
+    SW x18 x11           # C[i][j] = acc
+
+    ADDI x9 x9 1         # j++
+    J x0 jloop           # next j
+
+next_i
+    ADDI x8 x8 1         # i++
+    J x0 iloop           # next i
+
+done
+    HLT
+
+# ── Data section ─────────────────────────────────────────────────────────────
+
+# Matrix A (8×8), row-major.  A[i][j] = 8*i + j + 1  (values 1..64)
+.loc 300
+    .dataInt 1
+    .dataInt 2
+    .dataInt 3
+    .dataInt 4
+    .dataInt 5
+    .dataInt 6
+    .dataInt 7
+    .dataInt 8
+    .dataInt 9
+    .dataInt 10
+    .dataInt 11
+    .dataInt 12
+    .dataInt 13
+    .dataInt 14
+    .dataInt 15
+    .dataInt 16
+    .dataInt 17
+    .dataInt 18
+    .dataInt 19
+    .dataInt 20
+    .dataInt 21
+    .dataInt 22
+    .dataInt 23
+    .dataInt 24
+    .dataInt 25
+    .dataInt 26
+    .dataInt 27
+    .dataInt 28
+    .dataInt 29
+    .dataInt 30
+    .dataInt 31
+    .dataInt 32
+    .dataInt 33
+    .dataInt 34
+    .dataInt 35
+    .dataInt 36
+    .dataInt 37
+    .dataInt 38
+    .dataInt 39
+    .dataInt 40
+    .dataInt 41
+    .dataInt 42
+    .dataInt 43
+    .dataInt 44
+    .dataInt 45
+    .dataInt 46
+    .dataInt 47
+    .dataInt 48
+    .dataInt 49
+    .dataInt 50
+    .dataInt 51
+    .dataInt 52
+    .dataInt 53
+    .dataInt 54
+    .dataInt 55
+    .dataInt 56
+    .dataInt 57
+    .dataInt 58
+    .dataInt 59
+    .dataInt 60
+    .dataInt 61
+    .dataInt 62
+    .dataInt 63
+    .dataInt 64
+
+# Matrix B (8×8), row-major.  B[i][j] = 8*i + j + 1  (values 1..64)
+# Using the same counting pattern as A gives a non-trivial, easily verifiable
+# result: C[i][j] = sum_{k=0}^{7} A[i][k]*B[k][j]
+.loc 364
+    .dataInt 1
+    .dataInt 2
+    .dataInt 3
+    .dataInt 4
+    .dataInt 5
+    .dataInt 6
+    .dataInt 7
+    .dataInt 8
+    .dataInt 9
+    .dataInt 10
+    .dataInt 11
+    .dataInt 12
+    .dataInt 13
+    .dataInt 14
+    .dataInt 15
+    .dataInt 16
+    .dataInt 17
+    .dataInt 18
+    .dataInt 19
+    .dataInt 20
+    .dataInt 21
+    .dataInt 22
+    .dataInt 23
+    .dataInt 24
+    .dataInt 25
+    .dataInt 26
+    .dataInt 27
+    .dataInt 28
+    .dataInt 29
+    .dataInt 30
+    .dataInt 31
+    .dataInt 32
+    .dataInt 33
+    .dataInt 34
+    .dataInt 35
+    .dataInt 36
+    .dataInt 37
+    .dataInt 38
+    .dataInt 39
+    .dataInt 40
+    .dataInt 41
+    .dataInt 42
+    .dataInt 43
+    .dataInt 44
+    .dataInt 45
+    .dataInt 46
+    .dataInt 47
+    .dataInt 48
+    .dataInt 49
+    .dataInt 50
+    .dataInt 51
+    .dataInt 52
+    .dataInt 53
+    .dataInt 54
+    .dataInt 55
+    .dataInt 56
+    .dataInt 57
+    .dataInt 58
+    .dataInt 59
+    .dataInt 60
+    .dataInt 61
+    .dataInt 62
+    .dataInt 63
+    .dataInt 64
+
+# Matrix C (8×8), initialised to 0; overwritten by the multiply loop.
+.loc 428
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
+    .dataInt 0
