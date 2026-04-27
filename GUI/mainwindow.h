@@ -121,9 +121,9 @@ private:
 
     // ── Simulation state ──────────────────────────────────────
     static constexpr uint32_t DRAM_LINES          = 8192;
-    static constexpr uint32_t DRAM_DELAY          = 3;
+    static constexpr uint32_t DRAM_DELAY          = 100;
     static constexpr uint32_t CACHE_LINES         = 32;
-    static constexpr uint32_t CACHE_DELAY         = 0;
+    static constexpr uint32_t CACHE_DELAY         = 1;
     static constexpr uint32_t DRAM_LINES_PER_PAGE = 32;
 
     Memory*       m_dram     = nullptr;
