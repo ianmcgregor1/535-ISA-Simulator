@@ -109,10 +109,10 @@ public:
   /*
   * Back door functions - called when data is not resident
   */
-  MemoryResponse loadWordNext(uint32_t address);
-  MemoryResponse loadLineNext(uint32_t address);
-  MemoryResponse storeWordNext(uint32_t address, uint32_t data);
-  MemoryResponse storeLineNext(uint32_t address, const uint32_t* data);
+  MemoryResponse loadWordNext(uint32_t address, AccessID id);
+  MemoryResponse loadLineNext(uint32_t address, AccessID id);
+  MemoryResponse storeWordNext(uint32_t address, uint32_t data, AccessID id);
+  MemoryResponse storeLineNext(uint32_t address, const uint32_t* data, AccessID id);
 
 
   /*

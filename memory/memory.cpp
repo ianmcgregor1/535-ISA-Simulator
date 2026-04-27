@@ -38,9 +38,9 @@ Memory::Memory(uint32_t numLines, uint32_t delay, Memory* nextLevel, uint32_t as
 // Load a word, returns WAIT if busy
 MemoryResponse Memory::loadWord(uint32_t address, AccessID id) {
 
-  // If level is a cache and disabled, forward address directly to nextLevel without doing anything
+  // If level is a cache and disabled, forward address directly to nextLevel with ID
   if (isCache && !cacheEnabled && nextLevel != nullptr) {
-    MemoryResponse r = loadWordNext(address);
+    MemoryResponse r = loadWordNext(address, id);
     return r;
   }
 
@@ -88,7 +88,7 @@ MemoryResponse Memory::loadWord(uint32_t address, AccessID id) {
       return MemoryResponse::resWait(); // This shouldn't happen
     }
 
-    MemoryResponse r = loadLineNext(currentAddress);
+    MemoryResponse r = loadLineNext(currentAddress, AccessID::L1);
     // Forward a WAIT response
     if (r.status == MemoryResponse::Status::WAIT)
       return r;
@@ -112,9 +112,9 @@ MemoryResponse Memory::loadWord(uint32_t address, AccessID id) {
 // Read a word or line, returns WAIT if busy
 MemoryResponse Memory::loadLine(uint32_t address, AccessID id) {
 
-  // If level is a cache and disabled, forward address directly to nextLevel without doing anything
+  // If level is a cache and disabled, forward address directly to nextLevel with ID
   if (isCache && !cacheEnabled && nextLevel != nullptr) {
-    MemoryResponse r = loadLineNext(address);
+    MemoryResponse r = loadLineNext(address, id);
     return r;
   }
 
@@ -165,7 +165,7 @@ MemoryResponse Memory::loadLine(uint32_t address, AccessID id) {
       return MemoryResponse::resWait(); // This shouldn't happen
     }
 
-    MemoryResponse r = loadLineNext(currentAddress);
+    MemoryResponse r = loadLineNext(currentAddress, AccessID::L1);
     // Forward a WAIT response
     if (r.status == MemoryResponse::Status::WAIT)
       return r;
@@ -190,9 +190,9 @@ MemoryResponse Memory::loadLine(uint32_t address, AccessID id) {
 // Write a single word, returns WAIT if busy
 MemoryResponse Memory::storeWord(uint32_t address, uint32_t inData, AccessID id) {
 
-  // If level is a cache and disabled, forward directly to nextLevel
+  // If level is a cache and disabled, forward directly to nextLevel with ID
   if (isCache && !cacheEnabled && nextLevel != nullptr) {
-    return storeWordNext(address, inData);
+    return storeWordNext(address, inData, id);
   }
 
   // If not busy, set data
@@ -204,7 +204,7 @@ MemoryResponse Memory::storeWord(uint32_t address, uint32_t inData, AccessID id)
 
   // Write-through in progress - keep forwarding to nextLevel until OK
   if (pendingWriteThrough) {
-    MemoryResponse r = storeWordNext(currentAddress, currentData);
+    MemoryResponse r = storeWordNext(currentAddress, currentData, AccessID::L1);
     if (r.status == MemoryResponse::Status::WAIT)
       return r;
     finishOperation();
@@ -252,7 +252,7 @@ MemoryResponse Memory::storeWord(uint32_t address, uint32_t inData, AccessID id)
 
   // Initiate write-through regardless of hit or miss
   pendingWriteThrough = true;
-  MemoryResponse r = storeWordNext(currentAddress, currentData);
+  MemoryResponse r = storeWordNext(currentAddress, currentData, AccessID::L1);
   if (r.status == MemoryResponse::Status::WAIT)
     return r;
 
@@ -264,9 +264,9 @@ MemoryResponse Memory::storeWord(uint32_t address, uint32_t inData, AccessID id)
 // Write a full line, returns WAIT if busy and a word response with 0 data when successful
 MemoryResponse Memory::storeLine(uint32_t address, const uint32_t* inData, AccessID id) {
 
-  // If level is a cache and disabled, forward directly to nextLevel
+  // If level is a cache and disabled, forward directly to nextLevel with ID
   if (isCache && !cacheEnabled && nextLevel != nullptr) {
-    return storeLineNext(address, inData);
+    return storeLineNext(address, inData, id);
   }
 
   // If not busy, store data
@@ -279,7 +279,7 @@ MemoryResponse Memory::storeLine(uint32_t address, const uint32_t* inData, Acces
 
   // Write-through in progress - keep forwarding to nextLevel until OK
   if (pendingWriteThrough) {
-    MemoryResponse r = storeLineNext(currentAddress, currentLineData);
+    MemoryResponse r = storeLineNext(currentAddress, currentLineData, AccessID::L1);
     if (r.status == MemoryResponse::Status::WAIT)
       return r;
     finishOperation();
@@ -327,7 +327,7 @@ MemoryResponse Memory::storeLine(uint32_t address, const uint32_t* inData, Acces
 
   // Initiate write-through regardless of hit or miss
   pendingWriteThrough = true;
-  MemoryResponse r = storeLineNext(currentAddress, currentLineData);
+  MemoryResponse r = storeLineNext(currentAddress, currentLineData, AccessID::L1);
   if (r.status == MemoryResponse::Status::WAIT)
     return r;
 
@@ -340,44 +340,44 @@ MemoryResponse Memory::storeLine(uint32_t address, const uint32_t* inData, Acces
 /*
 * Back door operations to forward load/store requests to the next level of memory
 */
-MemoryResponse Memory::loadWordNext(uint32_t address) {
+MemoryResponse Memory::loadWordNext(uint32_t address, AccessID id) {
   // If no lower level, return
   if (nextLevel == nullptr) {
     std::cerr << "Memory::loadWordNext: no lower level\n";
     return MemoryResponse::resWait();
   }
 
-  return nextLevel->loadWord(address, AccessID::L1);
+  return nextLevel->loadWord(address, id);
 }
 
-MemoryResponse Memory::loadLineNext(uint32_t address) {
+MemoryResponse Memory::loadLineNext(uint32_t address, AccessID id) {
   // If no lower level, return
   if (nextLevel == nullptr) {
     std::cerr << "Memory::loadLineNext: no lower level\n";
     return MemoryResponse::resWait();
   }
 
-  return nextLevel->loadLine(address, AccessID::L1);
+  return nextLevel->loadLine(address, id);
 }
 
-MemoryResponse Memory::storeWordNext(uint32_t address, uint32_t value) {
+MemoryResponse Memory::storeWordNext(uint32_t address, uint32_t value, AccessID id) {
   // If no lower level, return
   if (nextLevel == nullptr) {
     std::cerr << "Memory::storeWordNext: no lower level\n";
     return MemoryResponse::resWait();
   }
 
-  return nextLevel->storeWord(address, value, AccessID::L1);
+  return nextLevel->storeWord(address, value, id);
 }
 
-MemoryResponse Memory::storeLineNext(uint32_t address, const uint32_t* data) {
+MemoryResponse Memory::storeLineNext(uint32_t address, const uint32_t* data, AccessID id) {
   // If no lower level, return
   if (nextLevel == nullptr) {
     std::cerr << "Memory::storeLineNext: no lower level\n";
     return MemoryResponse::resWait();
   }
 
-  return nextLevel->storeLine(address, data, AccessID::L1);
+  return nextLevel->storeLine(address, data, id);
 }
 
 
