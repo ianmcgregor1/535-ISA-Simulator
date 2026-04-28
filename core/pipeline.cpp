@@ -352,31 +352,47 @@ Instruction Pipeline::decode(bool prevStalled) {
   }
 
   // If current instruction is valid and operands are not yet read, check for stall conditions
-  if (decInst.valid && !decInst.squashed && !decInst.operandsRead) {
-    // If read-registers are pending, stall
+if (decInst.valid && !decInst.squashed && !decInst.operandsRead) {
+
+  // Check for hazards and stall if necessary
+  if (decInst.isFloat && decInst.type == InstructionType::LOAD_STORE) {
+    // rs1 is always an integer address register, so check integer dependencies
+    if (isPending(decInst.rs1, false)) {
+      decodeStalled = true;
+    }
+    // For stores only: rs2 is a float data register, check float dependencies
+    else if (decInst.funct3 == static_cast<uint8_t>(LoadStoreFunct3::STORE) && isPending(decInst.rs2, true)) {
+      decodeStalled = true;
+    }
+    // For loads: rs2 is the destination, don't need a check
+  } else {
+    // All other instructions: both source registers match isFloat
     if (isPending(decInst.rs1, decInst.isFloat) || isPending(decInst.rs2, decInst.isFloat)) {
       decodeStalled = true;
-    } else {
-      // No hazard - read values from register file
-      if (decInst.isFloat) {
-        if (decInst.type == InstructionType::LOAD_STORE) {
-            // Memory address is always an integer
-            decInst.rs1_value = regs->readInt(decInst.rs1);
-            if (decInst.funct3 == static_cast<uint8_t>(LoadStoreFunct3::STORE)) {
-                decInst.fs2_value = regs->readFloat(decInst.rs2); // Read data to store
-            }
-        } else {
-            decInst.fs1_value = regs->readFloat(decInst.rs1);
-            decInst.fs2_value = regs->readFloat(decInst.rs2);
-        }
-      }
-      else {
-        decInst.rs1_value = regs->readInt(decInst.rs1);
-        decInst.rs2_value = regs->readInt(decInst.rs2);
-      }
-      decInst.operandsRead = true; // Mark that operands are read
     }
   }
+
+  // If no stall, read from register file
+  if (!decodeStalled) {
+    if (decInst.isFloat) {
+      if (decInst.type == InstructionType::LOAD_STORE) {
+        // Memory address is always an integer
+        decInst.rs1_value = regs->readInt(decInst.rs1);
+        if (decInst.funct3 == static_cast<uint8_t>(LoadStoreFunct3::STORE)) {
+          decInst.fs2_value = regs->readFloat(decInst.rs2); // Read data to store
+        }
+      } else {
+        decInst.fs1_value = regs->readFloat(decInst.rs1);
+        decInst.fs2_value = regs->readFloat(decInst.rs2);
+      }
+    }
+    else {
+      decInst.rs1_value = regs->readInt(decInst.rs1);
+      decInst.rs2_value = regs->readInt(decInst.rs2);
+    }
+    decInst.operandsRead = true;
+  }
+}
 
   // Call fetch for next instruction, passing stall status
   Instruction incoming = fetch(decodeStalled || prevStalled);
